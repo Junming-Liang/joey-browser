@@ -1,0 +1,14 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><title>城之内原版 · 修复预览</title><link rel="stylesheet" href="./style.css"></head>
+<body>
+<header><strong>城之内原版 · 修复预览</strong><span id="version">正在检查版本</span></header>
+<main id="login"><form id="login-form"><h1>进入原版预览</h1><p>这一版在浏览器里运行原游戏。完整对局和手机流畅度仍在验证。</p><label for="password">访问密码</label><input id="password" type="password" autocomplete="current-password" required maxlength="128"><button type="submit">进入</button><p id="login-status" role="status"></p></form></main>
+<main id="game" hidden>
+<div id="launch"><p id="download-size">横屏后点击启动。默认只准备常用资源，未缓存内容后续按需下载，再次启动复用本机缓存。游戏声音会在启动后开启。</p><p>点击对应位置操作，按住卡片可拖动。右键按钮会作用于最后点击的位置。</p><label><input id="complete-resources" type="checkbox"> 启动前缓存完整游戏档案（解压后约 456 MiB，首次下载更多）</label><button id="start" disabled>准备中</button></div>
+<div id="game-surface" aria-label="原版游戏画面"></div>
+<div id="loading" hidden><label id="loading-label" for="loading-progress">准备游戏</label><progress id="loading-progress" aria-labelledby="loading-label"></progress></div>
+<p id="status" role="status">修复预览，尚未完成全部功能验证</p><button id="copy-error" hidden>复制运行信息</button>
+<details id="startup-details" hidden><summary>查看运行信息</summary><pre id="startup-report"></pre></details>
+<details id="failure-details" hidden><summary>查看错误信息</summary><pre id="failure-report"></pre></details>
+<nav id="controls" aria-label="手机辅助操作"><button data-key="Enter" disabled>回车</button><button data-key="Space" disabled>空格</button><button data-key="Escape" disabled>返回 Esc</button><button id="right-click" disabled>右键</button><button id="sound" disabled>恢复声音</button><button id="fullscreen">全屏</button></nav>
+</main><script type="module" src="./app.mjs"></script></body></html>

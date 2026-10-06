@@ -1,0 +1,16 @@
+node_modules/
+.bridge/
+__pycache__/
+*.pyc
+*.exe
+*.dat
+*.ydc
+*.ydr
+*.wasm
+*.wasm.gz
+*.tgz
+*.zip
+.env*
+config.local.json
+*-private.json
+.DS_Store

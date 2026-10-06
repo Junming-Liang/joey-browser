@@ -1,0 +1,20 @@
+{
+  "name": "joey-browser",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Original Joey game browser compatibility runtime and resource gateway",
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "test": "node scripts/verify-source.mjs && node games/joey/reverse/verify_resource_gateway_pacing.mjs",
+    "test:downloads": "node games/joey/original/check_download_resume.mjs",
+    "test:startup": "node games/joey/original/check_startup.mjs .bridge/joey-web/reverse/output/original-preview --restart --portrait --delay-resource --cache",
+    "test:game": "node games/joey/original/check_preview.mjs --resource-trace",
+    "build:preview": "python3 games/joey/original/build_preview.py"
+  },
+  "devDependencies": {
+    "playwright": "1.63.0"
+  }
+}

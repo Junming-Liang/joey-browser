@@ -1,0 +1,30 @@
+[Unit]
+Description=Joey Browser original game resource gateway
+After=network.target
+
+[Service]
+Type=simple
+User=joey-game
+Group=joey-game
+WorkingDirectory=/opt/joey-browser/release
+Environment=JOEY_ORIGINAL_CONFIG=/etc/joey-browser/config.local.json
+ExecStart=/usr/bin/node --max-old-space-size=64 /opt/joey-browser/release/server.mjs
+Restart=on-failure
+RestartSec=5
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectHome=yes
+ProtectSystem=strict
+NoNewPrivileges=yes
+CapabilityBoundingSet=
+UMask=0077
+Nice=19
+MemoryHigh=128M
+MemoryMax=192M
+CPUQuota=20%
+CPUWeight=1
+IOWeight=1
+TasksMax=32
+
+[Install]
+WantedBy=multi-user.target

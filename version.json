@@ -1,0 +1,42 @@
+{
+  "version": "0.1.0",
+  "tag": "v0.1.0",
+  "runtimeVersion": "20261005-234225-b8043abd",
+  "wasmSHA256": "d7c17b7b888208181cf6235eac1cc07e9c6a013cf59d84aa889d3d20652c46bc",
+  "wasmBytes": 83780104,
+  "programGzipSHA256": "59a9c41ec73ddc0a59cc6d4e7c5d2eb723fb50ee3c4e07f923b3629216171e3e",
+  "programGzipBytes": 16084277,
+  "theseusRepository": "https://github.com/evmar/theseus",
+  "theseusCommit": "0fe848f1905a651d843668400f0ad46ed4e212c0",
+  "theseusPatchSHA256": "9d506b2bea80c8a50de7239014bd06ecb230615aafb2917b48be9c7d0cb3893e",
+  "fontAtlasSHA256": "46c4254841927f04888cf3dce97b3e1baa639bdf7b55cdb57d53b229c6d4bc64",
+  "defaultDecodedPreloadBytes": 50040206,
+  "optionalCompleteDecodedPreloadBytes": 478398969,
+  "licensedOriginalInputs": [
+    {
+      "name": "joey_pc_cn.exe",
+      "length": 2060288,
+      "sha256": "2f54f0542faf72c4de90ca5e0d9dcf14922cc183f1027215d3dd421d127bce77"
+    },
+    {
+      "name": "data.dat",
+      "length": 333357244,
+      "sha256": "a76107c5e848ad20edf08ff868f065379ef33c365f03049572943dce8aa0192f"
+    },
+    {
+      "name": "Voice.dat",
+      "length": 145041724,
+      "sha256": "b23a7158d19f99d0a1a7013a2fbc291ad019768a166ce93cd15d90bca04dcc72"
+    },
+    {
+      "name": "Region.dat",
+      "length": 1,
+      "sha256": "e77b9a9ae9e30b0dbdb6f510a264ef9de781501d7b6b92ae89eb059c5ab743db"
+    }
+  ],
+  "includesOriginalGameExecutable": false,
+  "includesGameArchives": false,
+  "includesGeneratedOriginalProgram": false,
+  "playerSavesIncluded": false,
+  "productionCredentialsIncluded": false
+}

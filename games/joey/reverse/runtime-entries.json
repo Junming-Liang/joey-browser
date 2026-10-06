@@ -1,0 +1,42 @@
+[
+  {
+    "address": "005c9120",
+    "bytes": "33c0c3",
+    "reason": "Actual original startup dispatch in both Chromium and WebKit; XOR EAX,EAX; RET; followed by INT3 padding. Original EXE SHA is checked by translate_original.sh."
+  },
+  {
+    "address": "005c8525",
+    "bytes": "833de839a5000056",
+    "reason": "Actual CRT startup dispatch in both browsers; CMP DWORD [00a539e8],0; PUSH ESI; follows the prior function RET. File-backed executable bytes verified before translation."
+  },
+  {
+    "address": "004a9fd0",
+    "bytes": "64a1000000006aff68f6835d00",
+    "reason": "Actual windowed startup dispatch in both browsers after DirectDraw clipping initialization; 16-byte aligned SEH prologue after RET 8 and eleven NOP padding bytes, verified in original executable."
+  },
+  {
+    "address": "005495f0",
+    "bytes": "8a442404568bf1a801c706f4c95d00",
+    "reason": "Actual optimized original startup dispatch in Chromium and WebKit after the KONAMI splash; scalar-deleting destructor installs the verified 005dc9f4 vtable and returns RET 4. Entry is 16-byte aligned after a RET and five NOP padding bytes."
+  },
+  {
+    "address": "0057b530",
+    "bytes": "8b44240833d28ad48bc8",
+    "reason": "Actual original player-duel dispatch after the first computer monster play, independently reproduced in shipped local Chromium at render 2052 and public Chromium at render 2124. File-backed .text entry is 16-byte aligned after RET and three NOP bytes; bounded original disassembly runs through two plain RET paths ending at 0057b59e. No replacement card logic or data-pointer scan."
+  },
+  {
+    "address": "00439ff0",
+    "bytes": "538b5c240856578b7c24148bf15753e8",
+    "reason": "Actual iPhone Safari startup panic, independently reproduced in shipped Chromium only after restarting with the two fresh files created by the first run. File-backed executable .text entry, 16-byte aligned after RET 12 and NOP padding; second slot of the original two-slot vtable at 005da584, with original object vtable assignment at 00410712. Original checksum verifier 00439ef0 precedes decoder 00439d80, with RET 12 at 0043a025. Preserve original saved data and original decode instructions."
+  },
+  {
+    "address": "0045ccf0",
+    "bytes": "568b7424088b0650e8230000008b4c24",
+    "reason": "Actual shipped Chromium restart with only original-created browser save files reaches this missing callback after adding verified decoder 00439ff0. File-backed executable .text entry, 16-byte aligned after RET 8 and fourteen NOP bytes. Second slot of two-slot original vtable 005da57c (first slot 0045cbc0); original object assignment 00410708. Calls original header validator 0045cd20, advances data pointer and remaining length by eight, and returns RET 8 at 0045cd10. No replacement save logic."
+  },
+  {
+    "address": "005b4890",
+    "bytes": "568b742408668b0650e842dae4ff8a4e02",
+    "reason": "Actual shipped Chromium missing indirect target at first computer play, retained in original-startup-chromium-6f3d23be9a66.json. File-backed .text entry, 16-byte aligned after RET and eleven NOPs; RET at 005b48c7. Original eight-byte activation priority row 005dd4b8 has card ID 1429 and pointer 005b4890; five bounded original direct call sites also verified. Preserve original predicate instructions; no replacement card rules."
+  }
+]

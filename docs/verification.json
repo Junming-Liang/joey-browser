@@ -1,0 +1,105 @@
+{
+  "version": "0.1.0",
+  "runtimeVersion": "20261005-234225-b8043abd",
+  "checksBeforeGithubSnapshot": {
+    "source": "Accepted original browser preview build; test data uses only task-created fresh player files",
+    "localGame": [
+      {
+        "browser": "chromium",
+        "renders": 2501,
+        "errors": [],
+        "originalPlayerFilesPreserved": true,
+        "programDownloadedCompressedBytes": 16084277,
+        "programUncompressedVerifiedBytes": 83780104,
+        "audioState": "running",
+        "audioMissingFrames": 0,
+        "maxRenderIntervalMs": 149
+      },
+      {
+        "browser": "webkit",
+        "renders": 2500,
+        "errors": [],
+        "originalPlayerFilesPreserved": true,
+        "programDownloadedCompressedBytes": 16084277,
+        "programUncompressedVerifiedBytes": 83780104,
+        "audioState": "running",
+        "audioMissingFrames": 128,
+        "maxRenderIntervalMs": 202
+      }
+    ],
+    "resume": [
+      {
+        "browser": "chromium",
+        "savedPrefixes": [
+          {
+            "path": "/data.dat",
+            "prefixBytes": 150984,
+            "remainingBytesDownloaded": 897592,
+            "byteExact": true
+          },
+          {
+            "path": "/joey_original_bg.wasm.gz",
+            "prefixBytes": 199923,
+            "remainingBytesDownloaded": 848653,
+            "byteExact": true
+          }
+        ],
+        "automaticRetryCount": 1,
+        "integrity": {
+          "sourceChangeRejected": true,
+          "corruptRejected": true,
+          "discarded": 1
+        },
+        "cacheUnavailableFallback": true,
+        "ownSavePreserved": true
+      },
+      {
+        "browser": "webkit",
+        "savedPrefixes": [
+          {
+            "path": "/data.dat",
+            "prefixBytes": 171809,
+            "remainingBytesDownloaded": 876767,
+            "byteExact": true
+          },
+          {
+            "path": "/joey_original_bg.wasm.gz",
+            "prefixBytes": 196608,
+            "remainingBytesDownloaded": 851968,
+            "byteExact": true
+          }
+        ],
+        "automaticRetryCount": 1,
+        "integrity": {
+          "sourceChangeRejected": true,
+          "corruptRejected": true,
+          "discarded": 1
+        },
+        "cacheUnavailableFallback": true,
+        "ownSavePreserved": true
+      }
+    ],
+    "startupVariants": 6,
+    "public": {
+      "scope": "Fresh desktop WebKit context, trusted public HTTPS. Test-only browser route splits and interrupts one authentic program response; no server or shipped bytes modified. Same context reload retains only its own cache and original-generated player files. Not an actual iPhone or full duel speed measurement.",
+      "first4Ms": 82563,
+      "restartFirst4Ms": 1121,
+      "firstOriginalPresents": 120,
+      "restartOriginalPresents": 120,
+      "programAutomaticRetryCount": 1,
+      "verifiedRemainingProgramRange": "bytes 131072-1048575/16084277",
+      "restartProgramRequests": 0,
+      "restartResourceRequests": 0,
+      "restartProgramRestoredBytes": 16084277,
+      "restartResourceRestoredBytes": 50040206,
+      "errors": []
+    }
+  },
+  "userFeedback": "User reports the current iPhone Safari experience feels comparatively smooth and requested this first GitHub version.",
+  "knownUnverified": [
+    "complete original player victory/reward/all card effects",
+    "replay naming and full text input",
+    "performance across all iOS/Android devices"
+  ],
+  "productionGameSourcesChangedDuringSnapshot": false
+}

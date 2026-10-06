@@ -1,0 +1,90 @@
+{
+  "version": "0.1.0",
+  "runtimeVersion": "20261005-234225-b8043abd",
+  "scope": "Isolated source snapshot with fresh npm ci dependencies; accepted prebuilt runtime read-only and separate local test server, fresh desktop Chromium/WebKit player contexts. Not a full recompilation or physical-phone benchmark.",
+  "dependencyInstall": "npm ci --ignore-scripts; 0 reported vulnerabilities",
+  "sourceChecks": {
+    "command": "npm test",
+    "result": "passed",
+    "javascriptFiles": 15,
+    "patchShaVerified": true,
+    "gatewayPacing": {
+      "coldRequests": 50,
+      "rateLimitRejections": 0,
+      "warmRequests": 0,
+      "byteExact": true,
+      "retryAttempts": 3,
+      "cancelDuringRetry": true
+    }
+  },
+  "cleanUpstreamPatch": {
+    "patchCleanApplyChecked": true,
+    "checkedCommit": "0fe848f1905a651d843668400f0ad46ed4e212c0",
+    "keyPatchedSourcesMatchAcceptedBuild": true,
+    "fontAtlasSHA256": "46c4254841927f04888cf3dce97b3e1baa639bdf7b55cdb57d53b229c6d4bc64"
+  },
+  "publicationPrivacyScan": {
+    "privateCredentialsFound": false,
+    "productionAddressFound": false,
+    "privateMachinePathsFound": false,
+    "originalGameBinaryOrArchivesIncluded": false,
+    "playerSavesIncluded": false
+  },
+  "pythonAndShellSyntax": "passed",
+  "downloadChecks": [
+    {
+      "browser": "chromium",
+      "ranges": [
+        {
+          "path": "/data.dat",
+          "savedPrefixBytes": 171809,
+          "remainingBytesDownloaded": 876767,
+          "byteExact": true,
+          "partialRemoved": true
+        },
+        {
+          "path": "/joey_original_bg.wasm.gz",
+          "savedPrefixBytes": 134387,
+          "remainingBytesDownloaded": 914189,
+          "byteExact": true,
+          "partialRemoved": true
+        }
+      ],
+      "automaticRetryCount": 1,
+      "integrity": {
+        "sourceChangeRejected": true,
+        "corruptRejected": true,
+        "discarded": 1
+      },
+      "cacheUnavailableFallback": true,
+      "ownSavePreserved": true
+    },
+    {
+      "browser": "webkit",
+      "ranges": [
+        {
+          "path": "/data.dat",
+          "savedPrefixBytes": 151329,
+          "remainingBytesDownloaded": 897247,
+          "byteExact": true,
+          "partialRemoved": true
+        },
+        {
+          "path": "/joey_original_bg.wasm.gz",
+          "savedPrefixBytes": 196608,
+          "remainingBytesDownloaded": 851968,
+          "byteExact": true,
+          "partialRemoved": true
+        }
+      ],
+      "automaticRetryCount": 1,
+      "integrity": {
+        "sourceChangeRejected": true,
+        "corruptRejected": true,
+        "discarded": 1
+      },
+      "cacheUnavailableFallback": true,
+      "ownSavePreserved": true
+    }
+  ]
+}
