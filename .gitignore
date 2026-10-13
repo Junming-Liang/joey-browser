@@ -9,6 +9,8 @@ __pycache__/
 *.wasm
 *.wasm.gz
 *.tgz
+*.tar.gz
+*.tar.gz.sha256
 *.zip
 .env*
 config.local.json

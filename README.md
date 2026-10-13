@@ -111,11 +111,14 @@ flowchart LR
 | --- | --- |
 | [BUILD.md](docs/BUILD.md) | 原始输入、固定工具链、兼容补丁、程序转换和资源包生成 |
 | [DEPLOY.md](docs/DEPLOY.md) | 本地配置、资源目录、HTTPS、systemd、发布与回滚 |
+| [LOCAL-DEPLOYMENT.md](docs/LOCAL-DEPLOYMENT.md) | 用本地游戏输入生成完整部署包，目标机无需重新编译 |
 | [RESOURCE-PACKS.md](docs/RESOURCE-PACKS.md) | 压缩格式、轻量策略、缓存身份、续传和体积口径 |
 | [VERIFICATION.md](docs/VERIFICATION.md) | 已完成的验证、环境和当前限制 |
 | [version.json](version.json) | 运行版本、源文件、兼容补丁与资源包固定哈希 |
 
 部署脚本使用独立服务和回环端口，发布失败时恢复配置。完整轻量包与原画包分别安装在以哈希命名的目录，原画包是当前质量选项的必需资源；旧包保留供缓存续传和代码回滚使用。
+
+已准备游戏输入和构建产物的部署者，可用 `npm run package:local -- --output .bridge/local-deployment.tar.gz` 生成本机完整包。安装器从无损包还原原资源并核对哈希，目标机器仅需 Node.js；游戏版权内容不随公开源码发行。
 
 ## 开发与测试
 
@@ -125,7 +128,7 @@ flowchart LR
 npm test
 ```
 
-包括 JavaScript 语法与来源校验、资源网关范围读取契约、PCM 队列与边界，以及部署归档校验和回滚的离线测试。CI 执行这一层检查。
+包括 JavaScript 语法与来源校验、资源网关范围读取契约、PCM 队列与边界、安装器无损还原和文件保护，以及部署归档校验和回滚的离线测试。CI 执行这一层检查。
 
 ### 构建后的浏览器检查
 

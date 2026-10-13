@@ -179,5 +179,31 @@
     "changedChannels": 0,
     "totalChannels": 270660,
     "meanAbsoluteChannelDifference": 0.0
+  },
+  "localDeploymentValidation": {
+    "scope": "Private complete package generated from locally supplied original inputs, extracted into a new isolated directory and installed without a Rust build",
+    "originalArchives": "All three restored archives matched fixed source SHA256 values",
+    "originalExecutable": "Fixed source SHA256 verified",
+    "program": "Restored from gzip and matched fixed WASM SHA256",
+    "sourceArchiveAndPackIntegrity": "Passed",
+    "existingConfigurationPreservedOnRepeatSetup": true,
+    "startupReports": [
+      {
+        "browser": "chromium",
+        "renders": 120,
+        "failure": null,
+        "audioState": "running",
+        "status": "原版画面已开始绘制；完整对局和手机流畅度仍在验证。"
+      },
+      {
+        "browser": "webkit",
+        "renders": 120,
+        "failure": null,
+        "audioState": "running",
+        "status": "原版画面已开始绘制；完整对局和手机流畅度仍在验证。"
+      }
+    ],
+    "physicalPhonesTestedInThisCheck": false,
+    "originalGameAttachmentsPublished": false
   }
 }
