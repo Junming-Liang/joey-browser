@@ -1,8 +1,7 @@
-// Exercise the shipped host, login, archive ranges, touch coordinates and fresh browser saves.
+// Exercise the public shipped host, archive ranges, touch coordinates and fresh browser saves.
 import {createRequire} from 'node:module';
 import {open,writeFile,readFile,mkdir} from 'node:fs/promises';
 import {resolve} from 'node:path';
-import {scryptSync} from 'node:crypto';
 import {pathToFileURL} from 'node:url';
 import {startWorkerProfiler} from '../reverse/worker-profiler.mjs';
 const {chromium,webkit}=createRequire(import.meta.url)('playwright');
@@ -14,19 +13,25 @@ const demoCycle=process.argv.includes('--demo-cycle');
 const fullCache=process.argv.includes('--full-cache');
 const frameTrace=process.argv.includes('--frame-trace');
 const cpuSampling=process.argv.includes('--cpu-sampling');
-const evidence=resolve(output,'original-preview-check-'+revision.version+(fullCache?'-full-cache':'-common-cache')+(audioRecovery?'-audio-recovery':'')+(resourceTrace?'-resource-trace':'')+(demoCycle?'-demo-cycle':'')+(frameTrace?'-frame-trace':'')+(cpuSampling?'-cpu-sampling':''));await mkdir(evidence,{recursive:true});
+const presetIndex=process.argv.indexOf('--preset'),preset=presetIndex<0?'':process.argv[presetIndex+1];
+const presetCatalog=preset?(await import(pathToFileURL(resolve(root,'collection-catalog.mjs')))).collectionCatalog:null;
+const presetBytes=preset?Buffer.from(presetCatalog.decks.find(deck=>deck.id===preset).bytes,'base64').length:100;
+const collectionReload=process.argv.includes('--collection-reload');
+const evidence=resolve(output,'original-preview-check-'+revision.version+(fullCache?'-full-cache':'-common-cache')+(audioRecovery?'-audio-recovery':'')+(resourceTrace?'-resource-trace':'')+(demoCycle?'-demo-cycle':'')+(frameTrace?'-frame-trace':'')+(cpuSampling?'-cpu-sampling':'')+(preset?'-'+preset:'')+(collectionReload?'-collection-reload':''));await mkdir(evidence,{recursive:true});
 const {createOriginalServer}=await import(pathToFileURL(resolve(root,'server.mjs')));
-const config={filesRoot:root,resourcesRoot:resolve('.bridge/joey-web/reverse/input'),origin:'http://127.0.0.1',passwordSalt:'local-original-preview',passwordHash:scryptSync('local-preview-password','local-original-preview',32).toString('hex')};
+const config={filesRoot:root,resourcesRoot:resolve('.bridge/joey-web/reverse/input'),packedResourcesRoot:resolve('.bridge/joey-web/reverse/output/compression-20261013/light-pack'),origin:'http://127.0.0.1'};
 const server=await createOriginalServer(config);await new Promise(done=>server.listen(0,'127.0.0.1',done));
 config.origin='http://127.0.0.1:'+server.address().port;const prefix=config.origin+'/joey/original/';
 const reports=[];
 const assert=(condition,message)=>{if(!condition)throw Error(message);};
 try{
-  const blocked=await fetch(prefix+'joey_original_bg.wasm');assert(blocked.status===401,'WASM must require login');
-  const foreign=await fetch(prefix+'api/login',{method:'POST',headers:{Origin:'https://invalid.example','Content-Type':'application/json'},body:JSON.stringify({password:'local-preview-password'})});assert(foreign.status===403,'Login origin');
-  const login=await fetch(prefix+'api/login',{method:'POST',headers:{Origin:config.origin,'Content-Type':'application/json'},body:JSON.stringify({password:'local-preview-password'})});assert(login.status===200,'Local login');
-  const cookie=login.headers.get('set-cookie');assert(cookie.includes('Secure')&&cookie.includes('HttpOnly')&&cookie.includes('Path=/joey/original/')&&cookie.includes('SameSite=Strict'),'Cookie scope');
-  const Cookie=cookie.split(';')[0],headers={Cookie};
+  const headers={};
+  const metadata=await fetch(prefix+'api/session');assert(metadata.status===200&&!metadata.headers.has('set-cookie'),'Public metadata without a session');
+  const session=await metadata.json();assert(session.access==='public'&&session.resources.length===3&&session.program,'Public program and resource manifest');
+  assert((await fetch(prefix+'joey_original_bg.wasm',{method:'HEAD'})).status===200,'Public WASM');
+  assert((await fetch(prefix+'api/login',{method:'POST'})).status===405,'Password endpoint removed');
+  const diagnostics=await Promise.all(Array.from({length:5},()=>fetch(prefix+'api/failure',{method:'POST',headers:{Origin:config.origin,'Content-Type':'application/json','X-Real-IP':'parallel-diagnostic-check'},body:'{"error":"parallel-quota-check"}'})));
+  assert(diagnostics.filter(response=>response.status===200).length===4&&diagnostics.filter(response=>response.status===429).length===1,'Public diagnostic quota must also bound concurrent submissions');
   const range=await fetch(prefix+'resources/Voice.dat',{headers:{...headers,Range:'bytes=0-4095'}});
   assert(range.status===206&&range.headers.get('content-range')==='bytes 0-4095/145041724','Archive byte ranges');
   const archive=await open(resolve(config.resourcesRoot,'Voice.dat'),'r'),expected=Buffer.alloc(4096);try{await archive.read(expected,0,4096,0);}finally{await archive.close();}
@@ -39,13 +44,14 @@ try{
     assert((sliced.headers.get('content-encoding')==='gzip')===(encoding==='gzip'),'Slice gzip negotiation');
     assert(Buffer.from(await sliced.arrayBuffer()).equals(expected),'Decoded slice preserves original bytes');
   }
-  assert((await fetch(prefix+'resource-bytes/Voice.dat?start=0&end=1')).status===401,'Slice requires login');
+  assert((await fetch(prefix+'resource-bytes/Voice.dat?start=0&end=1')).status===200,'Slice works without login');
   assert((await fetch(prefix+'resource-bytes/system.dat?start=0&end=1',{headers})).status===404,'Slice cannot access player files');
   assert((await fetch(prefix+'resource-bytes/data.dat?start=0&end=999999999',{headers})).status===416,'Slice range limit');
   }
   assert((await fetch(prefix+'resources/system.dat',{headers:{...headers,Range:'bytes=0-99'}})).status===404,'No server save access');
   assert((await fetch(prefix+'resources/data.dat',{headers:{...headers,Range:'bytes=0-999999999'}})).status===416,'Range limit');
   for(const [name,engine]of [['chromium',chromium],['webkit',webkit]]){
+    if(process.argv.includes('--api-only'))break;
     if(process.argv.includes('--webkit-only')&&name!=='webkit')continue;
     if(process.argv.includes('--chromium-only')&&name!=='chromium')continue;
     if(cpuSampling&&name!=='chromium')continue;
@@ -55,7 +61,7 @@ try{
       const Original=AudioContext;window.testAudioContexts=[];
       window.AudioContext=class extends Original{constructor(...args){super(...args);window.testAudioContexts.push(this);}};
     });
-    await context.addCookies([{name:'joey_original_session',value:Cookie.slice(22),url:config.origin,httpOnly:true,sameSite:'Strict',secure:false}]);
+
     const page=await context.newPage(),errors=[],consoleMessages=[];page.on('pageerror',error=>errors.push(error.message));page.on('console',message=>{consoleMessages.push({type:message.type(),text:message.text().slice(0,12000)});if(consoleMessages.length>200)consoleMessages.shift();});
     // Test-only complete trace; the shipped host retains its bounded last 200.
     if(resourceTrace||frameTrace){
@@ -83,10 +89,11 @@ try{
       await page.locator('#start').waitFor({state:'visible'});await page.waitForFunction(()=>!document.getElementById('start').disabled);
       assert(!await page.locator('#complete-resources').isChecked(),'Full installation must be opt-in');
       if(fullCache)await page.locator('#complete-resources').check();
+      if(preset){await page.locator('#collection-options').evaluate(element=>element.open=true);await page.locator('#preset-deck').selectOption(preset);}
       await page.locator('#start').tap();await frames(4);
       if(cpuSampling)profiler=await startWorkerProfiler(browser,prefix+'original-worker.mjs');
       const prepared=await page.evaluate(()=>({preload:window.joeyOriginal.resourcePreload,requests:window.joeyOriginal.resourceStats.requests}));
-      assert(prepared.preload.complete&&prepared.preload.mode===(fullCache?'complete':'common')&&prepared.preload.total===(fullCache?revision.completePreloadBytes:revision.preloadBytes)&&prepared.preload.completed===prepared.preload.total,'Selected original resource plan must finish before play');
+      assert(prepared.preload.complete&&prepared.preload.mode===(fullCache?'complete':'common')&&prepared.preload.total===(fullCache?(revision.packedResources?.pack.length||revision.completePreloadBytes):revision.preloadBytes)&&prepared.preload.completed===prepared.preload.total,'Selected original resource plan must finish before play');
       const unexpected=[];
       if(fullCache)await page.route('**/{resources,resource-bytes}/**',route=>{unexpected.push(route.request().url());return route.abort();});
       await page.locator('[data-key=Enter]').tap();
@@ -120,11 +127,32 @@ try{
       assert(errors.length===0,'Browser page errors: '+errors.join(';'));
       assert(Math.abs(report.canvas.displayWidth/report.canvas.displayHeight-4/3)<.01,'Original canvas must retain 4:3 ratio');
       const saves=await page.evaluate(async()=>{const {openPlayerFiles}=await import('./player-files.mjs');const files=await openPlayerFiles();try{return (await files.load()).map(file=>({path:file.path,length:file.bytes.length}));}finally{files.close();}});
-      assert(saves.some(file=>file.path==='/deck.ydc'&&file.length===100)&&saves.some(file=>file.path.endsWith('/system.dat')&&file.length===5062),'Fresh original files must persist in browser');
+      assert(saves.some(file=>file.path==='/deck.ydc'&&file.length===presetBytes)&&saves.some(file=>file.path.endsWith('/system.dat')&&file.length===5062),'Fresh original files must persist in browser');
+      let collectionEvidence;
+      if(revision.files['collection-patch.mjs']){
+        collectionEvidence=await page.evaluate(async preset=>{
+          const {openPlayerFiles}=await import('./player-files.mjs'),{collectionInfo,decodeCollection,systemPath}=await import('./collection-patch.mjs');const profile=await openPlayerFiles();
+          try{
+            const files=await profile.load(),info=collectionInfo(files),deck=files.find(file=>file.path==='/deck.ydc').bytes,identity=decodeCollection(files.find(file=>file.path===systemPath).bytes).subarray(0,8);
+            if(!identity.every((byte,i)=>deck[i]===byte))throw Error('Original deck/profile identity mismatch');
+            if(preset){const {collectionCatalog}=await import('./collection-catalog.mjs'),entry=collectionCatalog.decks.find(deck=>deck.id===preset),expected=Uint8Array.from(atob(entry.bytes),char=>char.charCodeAt(0));
+              const groups=bytes=>{let offset=8;const view=new DataView(bytes.buffer,bytes.byteOffset,bytes.byteLength),result=[];for(let i=0;i<3;i++){const count=view.getUint16(offset,true);offset+=2;const cards=[];for(let j=0;j<count;j++){cards.push(view.getUint16(offset,true));offset+=2;}result.push(cards.sort((a,b)=>a-b));}if(offset!==bytes.length)throw Error('Invalid deck length');return result;};
+              if(JSON.stringify(groups(deck))!==JSON.stringify(groups(expected)))throw Error('Original game replaced selected preset');info.preset=entry.id;info.originalDeckMatches=true;
+            }return info;
+          }finally{profile.close();}
+        },preset);
+        assert(collectionEvidence.kinds===771&&collectionEvidence.copies>=2313,'Original game must retain full collection after real gameplay');
+      }
       // Reopen storage in a new document; never import a server-side player profile.
       await page.reload({waitUntil:'networkidle'});
       const reloaded=await page.evaluate(async()=>{const {openPlayerFiles}=await import('./player-files.mjs');const files=await openPlayerFiles();try{return (await files.load()).map(file=>({path:file.path,length:file.bytes.length}));}finally{files.close();}});
       assert(JSON.stringify(reloaded)===JSON.stringify(saves),'Browser files survive reload');
+      if(collectionReload){
+        await page.waitForFunction(()=>!document.getElementById('start').disabled);await page.locator('#collection-options').evaluate(element=>element.open=true);await page.locator('#unlock-cards').uncheck();
+        await page.locator('#start').tap();await frames(150);
+        const after=await page.evaluate(async()=>{const {openPlayerFiles}=await import('./player-files.mjs'),{collectionInfo}=await import('./collection-patch.mjs');const profile=await openPlayerFiles();try{return {info:collectionInfo(await profile.load()),probe:window.joeyOriginal};}finally{profile.close();}});
+        assert(after.info.kinds===771,'Original game must reopen patched save with unlocking disabled');collectionEvidence.reopen=after.info;collectionEvidence.reopenRenders=after.probe.renders;
+      }
       let fullToCommon;
       if(fullCache&&!demoCycle){
         // An existing complete install must remain reusable by the new default.
@@ -132,7 +160,7 @@ try{
         await page.waitForFunction(()=>!document.getElementById('start').disabled);
         await page.locator('#start').tap();await frames(120);
         fullToCommon=await page.evaluate(()=>({...window.joeyOriginal}));
-        assert(fullToCommon.resourcePreload.mode==='common'&&fullToCommon.resourcePreload.total===revision.preloadBytes&&fullToCommon.resourceStats.requests===0&&unexpected.length===0,'Common mode must reuse complete-page cache with no archive network');
+        assert(fullToCommon.resourcePreload.mode==='common'&&fullToCommon.resourcePreload.total===(revision.packedResources?revision.packedResources.pack.length:revision.preloadBytes)&&fullToCommon.resourceStats.requests===0&&unexpected.length===0,'Common mode must reuse complete-page cache with no archive network');
       }
       let demoEvidence;
       if(demoCycle){
@@ -158,7 +186,7 @@ try{
         assert(demoEvidence.audio.contextState==='running'&&demoEvidence.audio.nonzeroSamples>0,'Original demo audio must run');
       }
       const archiveNetwork={preloadMode:fullCache?'complete':'common',preparedRequests:prepared.requests,requestsAtPlayerCapture:report.resourceStats.requests,unexpectedDuringPlay:unexpected.length,decodedBytesAtPlayerCapture:report.resourceStats.downloadedBytes};
-      const result={browser:name,version:revision.version,wasmSHA256:revision.wasmSHA256,report,saves,reloaded,errors,audioEvidence,demoEvidence,fullToCommon,cpuEvidence,archiveNetwork};reports.push(result);await writeFile(resolve(evidence,'original-preview-'+name+'.json'),JSON.stringify(result,null,2)+'\n');
+      const result={browser:name,version:revision.version,wasmSHA256:revision.wasmSHA256,report,saves,reloaded,errors,audioEvidence,demoEvidence,fullToCommon,cpuEvidence,archiveNetwork,collectionEvidence,preset};reports.push(result);await writeFile(resolve(evidence,'original-preview-'+name+'.json'),JSON.stringify(result,null,2)+'\n');
       console.log(JSON.stringify({browser:name,renders:report.renders,stages:report.stages,audio:report.audio,saves,canvas:report.canvas}));
     }catch(error){const report=await page.evaluate(()=>window.joeyOriginal||null).catch(()=>null);await writeFile(resolve(evidence,'original-preview-'+name+'-failure.json'),JSON.stringify({browser:name,version:revision.version,wasmSHA256:revision.wasmSHA256,error:String(error),errors,consoleMessages,report},null,2)+'\n');throw error;}finally{if(profiler)await profiler.close();await context.close();await browser.close();}
   }

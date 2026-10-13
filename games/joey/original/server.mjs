@@ -2,31 +2,44 @@ import {createServer} from 'node:http';
 import {readFile,stat} from 'node:fs/promises';
 import {createReadStream} from 'node:fs';
 import {resolve} from 'node:path';
-import {randomBytes,scryptSync,timingSafeEqual} from 'node:crypto';
 import {pathToFileURL} from 'node:url';
 import {createGzip} from 'node:zlib';
+import {createHash} from 'node:crypto';
 
 const prefix='/joey/original/';
 const types={'.html':'text/html; charset=utf-8','.mjs':'text/javascript; charset=utf-8','.js':'text/javascript; charset=utf-8','.css':'text/css; charset=utf-8','.wasm':'application/wasm','.json':'application/json'};
-const assets=['index.html','app.mjs','style.css','browser-host.mjs','original-worker.mjs','player-files.mjs','resource-cache.mjs','resource-layout.mjs','range-reader.mjs','pcm-audio-host.mjs','pcm-worklet.js','joey_original.js','joey_original_bg.wasm'];
-const publicAssets=new Set(['index.html','app.mjs','style.css']);
+const assets=['index.html','app.mjs','style.css','browser-host.mjs','original-worker.mjs','player-files.mjs','collection-patch.mjs','collection-catalog.mjs','resource-cache.mjs','resource-reader.mjs','resource-layout.mjs','range-reader.mjs','packed-resource-reader.mjs','resource-byte-filter.mjs','structured-byte-filter.mjs','resources.manifest.json','pcm-audio-host.mjs','pcm-worklet.js','joey_original.js','joey_original_bg.wasm'];
 const acceptsGzip=req=>/(?:^|,|\s)gzip(?:\s*(?:,|;|$))/.test(req.headers['accept-encoding']||'')&&!/gzip\s*;\s*q=0(?:\D|$)/.test(req.headers['accept-encoding']||'');
 export async function createOriginalServer(config){
   const root=resolve(config.filesRoot),resourcesRoot=resolve(config.resourcesRoot);
   const revision=JSON.parse(await readFile(resolve(root,'revision.json'),'utf8'));
   const files=new Map();
-  for(const name of assets){const path=resolve(root,name),info=await stat(path);if(!info.isFile())throw Error('Invalid asset '+name);files.set(name,{path,size:info.size,etag:revision.files[name]});}
+  for(const name of [...assets,'brotli-block-decoder.mjs','brotli-decoder-worker.mjs','brotli-decoder.mjs','brotli-decoder.wasm','legacy-resources.manifest.json','original-resources.manifest.json']){const path=resolve(root,name),info=await stat(path);if(!info.isFile())throw Error('Invalid asset '+name);files.set(name,{path,size:info.size,etag:revision.files[name]});}
   const compressed=resolve(root,'joey_original_bg.wasm.gz'),compressedInfo=await stat(compressed);
   if(!/^[a-f0-9]{64}$/.test(revision.programGzipSHA256||''))throw Error('Missing pinned compressed program');
   const resources=new Map(revision.resources.map(file=>[file.name,{...file,path:resolve(resourcesRoot,file.name)}]));
   if(resources.size!==3||!['data.dat','Voice.dat','Region.dat'].every(name=>resources.has(name)))throw Error('Invalid archive allowlist');
   for(const file of resources.values())if((await stat(file.path)).size!==file.length)throw Error('Archive size mismatch '+file.name);
-  if(!/^[a-f0-9]{64}$/.test(config.passwordHash)||typeof config.passwordSalt!=='string'||!/^https?:\/\//.test(config.origin))throw Error('Invalid original gateway config');
-  const expected=Buffer.from(config.passwordHash,'hex'),sessions=new Map(),attempts=new Map(),failureReports=new Map();
-  const authenticated=req=>{
-    const token=(req.headers.cookie||'').split(';').map(part=>part.trim()).find(part=>part.startsWith('joey_original_session='))?.slice(22);
-    const expiry=sessions.get(token);if(!expiry)return false;if(expiry<Date.now()){sessions.delete(token);return false;}return true;
-  };
+  const packedResources=revision.packedResources,pack=packedResources?.pack;
+  if(pack?.sha256!=='5554c09969b2bc03233198843b977174f4b3468cae19cb6c9f3d0b0da10275dc'||pack.length!==179562757||pack.path!=='/__joey_packed_resources_v1'||pack.url!==prefix+'resource-packs/'+pack.sha256||packedResources.manifestURL!==prefix+'resources.manifest.json')throw Error('Invalid compressed resource identity');
+  const packPath=resolve(config.packedResourcesRoot,'resources.gzip.pack'),packInfo=await stat(packPath);
+  if(!packInfo.isFile()||packInfo.size!==pack.length)throw Error('Compressed resource size mismatch');
+  const manifestBytes=await readFile(resolve(root,'resources.manifest.json'));
+  if(createHash('sha256').update(manifestBytes).digest('hex')!==packedResources.manifestSHA256||JSON.stringify(JSON.parse(manifestBytes).pack)!==JSON.stringify(pack))throw Error('Compressed resource manifest mismatch');
+  const legacyPackedResources=revision.legacyPackedResources,originalPackedResources=revision.originalPackedResources;
+  const legacyPins=[['original-resources.manifest.json','722216f76a656d878246f6cd4337fde2f9f37895670e54e3a02639c35d6e6ef9',227949455,'a08083b1fcb062907d495be83941be755397cd0d78e382fb4d38bb71f95689aa'],['legacy-resources.manifest.json','42d626a804979565e5dabe976975c8f5db88b0c4314b9811e44ba4eec2091f49',270625555,'4ff202b30b753adf1fa2487ac352ad4f1e1f4540587b0cea4fedaed0164e7e86']];
+  if(!Array.isArray(legacyPackedResources)||legacyPackedResources.length!==2||JSON.stringify(originalPackedResources)!==JSON.stringify(legacyPackedResources[0]))throw Error('Invalid previous compressed resource identities');
+  const packs=new Map([[pack.sha256,{pack,path:packPath}]]);
+  for(const [index,[name,sha,length,manifestSHA]]of legacyPins.entries()){
+    const previous=legacyPackedResources[index];
+    if(previous?.manifestURL!==prefix+name||previous.manifestSHA256!==manifestSHA||previous.pack?.sha256!==sha||previous.pack.length!==length||previous.pack.url!==prefix+'resource-packs/'+sha||previous.pack.path!==pack.path)throw Error('Invalid previous compressed resource identity');
+    const previousBytes=await readFile(resolve(root,name));
+    if(createHash('sha256').update(previousBytes).digest('hex')!==manifestSHA)throw Error('Previous compressed manifest mismatch');
+    const previousPath=resolve(config.packedResourcesRoot,'..',sha,'resources.gzip.pack');
+    try{const info=await stat(previousPath);if(!info.isFile()||info.size!==length)throw Error('Previous compressed resource size mismatch');packs.set(sha,{pack:previous.pack,path:previousPath});}catch(error){if(error.code!=='ENOENT'||index===0)throw error;}
+  }
+  if(!/^https?:\/\//.test(config.origin))throw Error('Invalid original gateway config');
+  const failureReports=new Map();
   const common={
     'Cross-Origin-Opener-Policy':'same-origin','Cross-Origin-Embedder-Policy':'require-corp','Cross-Origin-Resource-Policy':'same-origin',
     'X-Content-Type-Options':'nosniff','Referrer-Policy':'same-origin',
@@ -40,28 +53,13 @@ export async function createOriginalServer(config){
       const raw=(req.url||'').split('?')[0];
       if(!raw.startsWith(prefix)||raw.includes('%')||raw.includes('\\')||raw.includes('..'))return json(404,{error:'Not found'});
       const name=raw.slice(prefix.length)||'index.html';
-      if(name==='api/login'&&req.method==='POST'){
-        if(req.headers.origin!==config.origin||!(req.headers['content-type']||'').startsWith('application/json'))return json(403,{error:'Invalid origin'});
-        const now=Date.now(),ip=String(req.headers['x-real-ip']||req.socket.remoteAddress).slice(0,100);
-        for(const [key,value]of attempts)if(value.until<=now)attempts.delete(key);
-        const bucket=attempts.get(ip)||{count:0,until:now+900000};
-        if(bucket.count>=5)return json(429,{error:'Retry later'},{'Retry-After':String(Math.ceil((bucket.until-now)/1000))});
-        bucket.count++;if(!attempts.has(ip)&&attempts.size>=512)attempts.delete(attempts.keys().next().value);attempts.set(ip,bucket);
-        let body='';for await(const chunk of req){body+=chunk.toString('utf8');if(Buffer.byteLength(body)>2048)return json(413,{error:'Request too large'});}
-        let password;try{password=JSON.parse(body).password;}catch{return json(400,{error:'Invalid body'});}
-        if(typeof password!=='string'||password.length>128)return json(400,{error:'Invalid password'});
-        if(!timingSafeEqual(scryptSync(password,config.passwordSalt,32),expected))return json(401,{error:'Invalid password'});
-        attempts.delete(ip);for(const [token,expiry]of sessions)if(expiry<now)sessions.delete(token);
-        if(sessions.size>=32)sessions.delete(sessions.keys().next().value);
-        const token=randomBytes(32).toString('base64url');sessions.set(token,now+86400000);
-        return json(200,{ok:true},{'Set-Cookie':`joey_original_session=${token}; Path=${prefix}; HttpOnly; Secure; SameSite=Strict; Max-Age=86400`});
-      }
       if(name==='api/failure'&&req.method==='POST'){
         if(req.headers.origin!==config.origin||!(req.headers['content-type']||'').startsWith('application/json'))return json(403,{error:'Invalid origin'});
-        if(!authenticated(req))return json(401,{error:'Authentication required'});
-        const token=(req.headers.cookie||'').split(';').map(part=>part.trim()).find(part=>part.startsWith('joey_original_session='))?.slice(22);
-        for(const key of failureReports.keys())if(!sessions.has(key))failureReports.delete(key);
-        if((failureReports.get(token)||0)>=4)return json(429,{error:'Diagnostic limit'});
+        const now=Date.now(),ip=String(req.headers['x-real-ip']||req.socket.remoteAddress).slice(0,100);
+        for(const [key,value]of failureReports)if(value.until<=now)failureReports.delete(key);
+        const bucket=failureReports.get(ip)||{count:0,until:now+900000};
+        if(bucket.count>=4)return json(429,{error:'Diagnostic limit'});
+        bucket.count++;if(!failureReports.has(ip)&&failureReports.size>=512)failureReports.delete(failureReports.keys().next().value);failureReports.set(ip,bucket);
         let body='';for await(const chunk of req){body+=chunk.toString('utf8');if(Buffer.byteLength(body)>8192)return json(413,{error:'Request too large'});}
         let data;try{data=JSON.parse(body);}catch{return json(400,{error:'Invalid body'});}
         if(!data||typeof data!=='object'||Array.isArray(data)||typeof data.error!=='string')return json(400,{error:'Invalid diagnostic'});
@@ -69,14 +67,20 @@ export async function createOriginalServer(config){
         for(const key of ['browser','stage','startupPhase','error','errorName'])if(typeof data[key]==='string')record[key]=data[key].slice(0,key==='error'?2000:300);
         if(Number.isSafeInteger(data.renders)&&data.renders>=0)record.renders=data.renders;
         for(const key of ['secureContext','isolated','sharedMemory'])if(typeof data[key]==='boolean')record[key]=data[key];
-        failureReports.set(token,(failureReports.get(token)||0)+1);
         console.error('Original preview failure: '+JSON.stringify(record));
         return json(200,{recorded:true});
       }
       if(req.method!=='GET'&&req.method!=='HEAD')return json(405,{error:'Method not allowed'},{Allow:'GET, HEAD'});
-      const auth=authenticated(req);
-      if(name==='api/session')return json(200,{authenticated:auth,version:revision.version,...(auth?{program:{length:files.get('joey_original_bg.wasm').size,compressedBytes:compressedInfo.size,compressedSHA256:revision.programGzipSHA256,compressedURL:prefix+'program-bytes'},preparation:{commonBytes:revision.preloadBytes,commonCompressedEstimateBytes:revision.preloadTransferEstimateBytes,completeBytes:revision.completePreloadBytes},resources:[...resources.values()].map(file=>({path:'/'+file.name,url:prefix+'resources/'+file.name,compressedURL:prefix+'resource-bytes/'+file.name,length:file.length,sha256:file.sha256}))}:{})});
-      if(!publicAssets.has(name)&&!auth)return json(401,{error:'Authentication required'});
+      // Keep the metadata shape compatible with previously loaded clients.
+      if(name==='api/session')return json(200,{authenticated:true,access:'public',version:revision.version,packedResources,originalPackedResources,legacyPackedResources,qualityProfile:revision.qualityProfile,program:{length:files.get('joey_original_bg.wasm').size,compressedBytes:compressedInfo.size,compressedSHA256:revision.programGzipSHA256,compressedURL:prefix+'program-bytes'},preparation:{commonBytes:revision.preloadBytes,commonCompressedEstimateBytes:revision.preloadTransferEstimateBytes,completeBytes:revision.completePreloadBytes,completeCompressedBytes:pack.length},resources:[...resources.values()].map(file=>({path:'/'+file.name,url:prefix+'resources/'+file.name,compressedURL:prefix+'resource-bytes/'+file.name,length:file.length,sha256:file.sha256}))});
+      if(name.startsWith('resource-packs/')&&packs.has(name.slice(15))){
+        const {pack,path:packPath}=packs.get(name.slice(15));
+        const match=/^bytes=(\d+)-(\d+)$/.exec(req.headers.range||''),start=Number(match?.[1]),end=Number(match?.[2]);
+        if(!match||!Number.isSafeInteger(start)||!Number.isSafeInteger(end)||start>end||end>=pack.length||end-start>=1048576)return json(416,{error:'Exact compressed resource range required'});
+        // IndexedDB owns this compressed cache; avoid a second large HTTP copy.
+        res.writeHead(206,{'Content-Type':'application/octet-stream','Cache-Control':'no-store','Content-Range':`bytes ${start}-${end}/${pack.length}`,'Content-Length':end-start+1,ETag:`"${pack.sha256}"`,'Accept-Ranges':'bytes'});
+        if(req.method==='HEAD')return res.end();return stream(packPath,res,{start,end});
+      }
       if(name==='program-bytes'){
         const match=/^bytes=(\d+)-(\d+)$/.exec(req.headers.range||'');
         if(!match)return json(416,{error:'Exact program range required'});

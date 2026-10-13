@@ -1,0 +1,183 @@
+{
+  "runtimeVersion": "20261013-105914-175e2127",
+  "scope": "2026-10-13 desktop Chromium/WebKit mobile-viewport checks; complete installpack+index+incrementaldecoder body sizes, excluding shared game program/HTTP overhead. Physical-phone/full-duel acceptance not implied.",
+  "metrics": {
+    "scope": "Complete pack body+index+incremental decoder files; same originals and existing game program excluded; actual sizes decimalMB. light changes only cardart andPCM by explicit user authorization. Desktop checks not phone/fullduel acceptance.",
+    "version": "20261013-105914-175e2127",
+    "packSHA256": "5554c09969b2bc03233198843b977174f4b3468cae19cb6c9f3d0b0da10275dc",
+    "payloadBytes": 179562757,
+    "packIndexDecoderBytes": 180048624,
+    "previousLosslessPackIndexDecoderBytes": 228397312,
+    "savedBytes": 48348688,
+    "savedPercent": 21.168676450973294,
+    "originalArchiveBytes": 478398969,
+    "savedVersusOriginalPercent": 62.36433695157064,
+    "archiveSHA256": "44640079e7016629dacb605e8b7a54e5cfa632128ec2c5de394d504a07bcecd3",
+    "onlyBundleDifferenceFromFullyTestedLight": [
+      "server.mjs"
+    ],
+    "finalBundleUnpackPassed": true,
+    "secretPatternScanPassed": true,
+    "qualityProfile": {
+      "name": "light-rgb6-pcm13",
+      "cardArtworkChannelBits": 6,
+      "pcmEffectiveBits": 13,
+      "maxCardChannelError": 2,
+      "maxPCMSampleError": 4,
+      "scope": "24bit card artwork only; UI, backgrounds, masks, alpha and fonts unchanged; RIFF PCM payload only, sample rates/channels/lengths unchanged"
+    }
+  },
+  "checks": {
+    "version": "20261013-105914-175e2127",
+    "url": "https://106.12.148.75:8443/joey/original/",
+    "publicNoPassword": true,
+    "actualPackIndexDecoderBytes": 180048624,
+    "savedFromPreviousLosslessPercent": 21.168676450973294,
+    "qualityProfile": {
+      "name": "light-rgb6-pcm13",
+      "cardArtworkChannelBits": 6,
+      "pcmEffectiveBits": 13,
+      "maxCardChannelError": 2,
+      "maxPCMSampleError": 4,
+      "scope": "24bit card artwork only; UI, backgrounds, masks, alpha and fonts unchanged; RIFF PCM payload only, sample rates/channels/lengths unchanged"
+    },
+    "fullDerived458BlocksVerifiedBothBrowsers": true,
+    "fullOriginalRawCacheReusedZeroDownloadBothBrowsers": true,
+    "partialResume4096BothBrowsers": true,
+    "editorAnd1200ContinuousMusicFramesBothBrowsers": true,
+    "additionalMissingAudioFrames": 0,
+    "qualityCacheMatrixBothBrowsers": true,
+    "cancelAndMalformedDecoderTestsBothBrowsers": true,
+    "publicCardAudioBothQualitiesBothBrowsers": true,
+    "publicOriginalGameStartupBothBrowsers": true,
+    "originalFidelityV2RequiredByServerAndDeployer": true,
+    "deploymentMockedTests": 24,
+    "credentialPatternScanPassed": true,
+    "otherServicesIngressAndWristUnchanged": true,
+    "scope": "Complete installation pack reduction with limited user-authorized lossy card artwork and PCM. Desktop Chromium/WebKit with mobile viewport, not physical phones/full-duel acceptance. Existing complete original caches deliberately reused; no forced reinstall."
+  },
+  "qualityMatrix": [
+    {
+      "browser": "chromium",
+      "version": "20261013-105914-175e2127",
+      "reports": [
+        {
+          "kind": "light-complete-choose-original",
+          "passed": true,
+          "requests": [
+            {
+              "url": "/quality-index/original"
+            },
+            {
+              "url": "/quality-pack/original",
+              "range": "bytes=0-62"
+            }
+          ]
+        },
+        {
+          "kind": "light-and-v1-partial-choose-original",
+          "passed": true,
+          "requests": [
+            {
+              "url": "/quality-index/legacy"
+            },
+            {
+              "url": "/quality-pack/legacy",
+              "range": "bytes=11-71"
+            }
+          ]
+        },
+        {
+          "kind": "original-complete-choose-light",
+          "passed": true,
+          "requests": [
+            {
+              "url": "/quality-index/original"
+            }
+          ]
+        },
+        {
+          "kind": "corrupt-light-fallback-original",
+          "passed": true,
+          "requests": [
+            {
+              "url": "/quality-index/light"
+            },
+            {
+              "url": "/quality-raw/0",
+              "range": "bytes=0-0"
+            }
+          ]
+        }
+      ],
+      "derivedIdentityRequired": true
+    },
+    {
+      "browser": "webkit",
+      "version": "20261013-105914-175e2127",
+      "reports": [
+        {
+          "kind": "light-complete-choose-original",
+          "passed": true,
+          "requests": [
+            {
+              "url": "/quality-index/original"
+            },
+            {
+              "url": "/quality-pack/original",
+              "range": "bytes=0-62"
+            }
+          ]
+        },
+        {
+          "kind": "light-and-v1-partial-choose-original",
+          "passed": true,
+          "requests": [
+            {
+              "url": "/quality-index/legacy"
+            },
+            {
+              "url": "/quality-pack/legacy",
+              "range": "bytes=11-71"
+            }
+          ]
+        },
+        {
+          "kind": "original-complete-choose-light",
+          "passed": true,
+          "requests": [
+            {
+              "url": "/quality-index/original"
+            }
+          ]
+        },
+        {
+          "kind": "corrupt-light-fallback-original",
+          "passed": true,
+          "requests": [
+            {
+              "url": "/quality-index/light"
+            },
+            {
+              "url": "/quality-raw/0",
+              "range": "bytes=0-0"
+            }
+          ]
+        }
+      ],
+      "derivedIdentityRequired": true
+    }
+  ],
+  "sourceArtComparison": {
+    "scope": "Same actual Chromium canvas screenshot scene after 1200 music frames, desktop mobile viewport. Source card-only quantization; source UI bytes separately exact. One scene, not all game views/physical phone.",
+    "dimensions": [
+      347,
+      260,
+      3
+    ],
+    "maxChannelDifference": 0,
+    "changedChannels": 0,
+    "totalChannels": 270660,
+    "meanAbsoluteChannelDifference": 0.0
+  }
+}

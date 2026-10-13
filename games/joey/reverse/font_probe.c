@@ -33,10 +33,15 @@ static HANDLE stdout_handle;
 static INFO info={40,192,-32,1,32,0,192*32*4,0,0,0,0};
 /* The 18px bold dialog is observed in both the physical phone and original
    player-turn reproduction. Keep normal/bold and original quality variants. */
+#ifdef FONT_LIGHT_EQUIVALENCE
+static const struct {int height,weight;DWORD quality;} profiles[]={
+ {14,300,2},{14,400,2}};
+#else
 static const struct {int height,weight;DWORD quality;} profiles[]={
  {12,700,2},{12,700,3},{14,700,2},{14,700,3},
  {12,400,2},{12,400,3},{14,400,2},{14,400,3},
  {18,700,2},{18,700,3},{18,400,2},{18,400,3}};
+#endif
 #define PROFILE_COUNT (sizeof(profiles)/sizeof(profiles[0]))
 static void hex(DWORD value,unsigned int digits){static const char alphabet[]="0123456789abcdef";while(digits){digits--;output[length++]=alphabet[(value>>(digits*4))&15];}}
 static void word(DWORD value){output[length++]=' ';hex(value,8);}

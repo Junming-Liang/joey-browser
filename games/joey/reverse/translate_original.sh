@@ -12,6 +12,12 @@ export CARGO_HOME="$task_tools/rust/cargo"
 export RUSTUP_HOME="$task_tools/rust/rustup"
 export PATH="$CARGO_HOME/bin:$PATH"
 export CARGO_BUILD_JOBS=4
+# Compiler identity is part of the original-to-WASM reproducible build.
+expected_compiler=db8f076d2619ce2585b0380dda06e8da25a40da4
+if [[ $(rustc -Vv | sed -n 's/^commit-hash: //p') != "$expected_compiler" ]]; then
+  printf 'Unexpected original-game Rust compiler; use the verified 2026-10-03 nightly.\n' >&2
+  exit 2
+fi
 export CARGO_PROFILE_DEV_DEBUG=0
 python3 - "$exe_file" "$repo" "$blocks" "$script_dir/runtime-entries.json" "$script_dir" <<'PY'
 import hashlib,sys,json,struct
@@ -63,3 +69,5 @@ PY
 cargo build --locked --manifest-path "$repo/Cargo.toml" -p tc
 "$repo/target/debug/tc" --exe "$exe_file" --out "$repo/out/joey_cn" --entry-points-file "$repo/out/joey_cn/runtime-entries-combined.txt"
 python3 "$script_dir/prepare_translated.py" "$repo" "$audit"
+python3 "$script_dir/specialize_original_lzss.py" "$repo"
+python3 "$script_dir/specialize_original_copy.py" "$repo"

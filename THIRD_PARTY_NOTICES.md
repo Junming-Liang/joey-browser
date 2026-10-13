@@ -1,5 +1,7 @@
 # 第三方来源与许可说明
 
+本项目自有代码与文档采用 [MIT License](LICENSE)。第三方代码、补丁中的上游上下文、字形数据、卡组配方及原游戏内容保留各自的版权和许可；根目录 MIT 许可只适用于本项目有权授权的内容。
+
 ## Theseus
 
 来源：<https://github.com/evmar/theseus>
@@ -24,4 +26,19 @@ Theseus提供DOS/Windows32位程序到Rust的静态转换和部分API兼容实�
 
 浏览器检查使用Microsoft Playwright，固定版本1.63.0，按其Apache-2.0许可通过npm安装。不将其浏览器或node_modules加入Git版本库。
 
-本仓库未对所有内容统一附加新的开源许可证；第三方内容保留其来源和适用许可。
+## brotli-dec-wasm
+
+来源：<https://github.com/ustclug-dev/brotli-dec-wasm>，固定 npm 版本 2.3.2。
+
+采用上游提供的 MIT／Apache-2.0 许可。随附整数解码器 ESM、WASM、完整许可和修改说明：
+
+- [brotli-decoder-NOTICE.txt](games/joey/reverse/brotli-decoder-NOTICE.txt)
+- [来源与校验值](games/joey/reverse/brotli-decoder-provenance.json)
+
+WASM 内存段增加 32 MiB 线性内存上限；ESM 保持上游内容。该第三方 WASM 只解压资源，与原游戏转换后的程序不同；后者不随源码发布。
+
+## 预设卡组
+
+目录包含原版兼容主题配置、经当前卡池校验的玩家经典配置和经典攻略配方。来源 URL、配方或 SHA 保留在 `collection-catalog.mjs`、`classic-burn-decks.json` 中。初始 profile 来自专用原程序测试生成的合成存档，不含真实玩家进度。原游戏内容仍属于各自权利人，不为第三方配置指定新的统一许可证。
+
+第三方内容的分发须遵循对应声明，不因本项目采用 MIT 而改变。

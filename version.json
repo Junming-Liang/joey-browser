@@ -1,14 +1,14 @@
 {
-  "version": "0.1.0",
-  "tag": "v0.1.0",
-  "runtimeVersion": "20261005-234225-b8043abd",
-  "wasmSHA256": "d7c17b7b888208181cf6235eac1cc07e9c6a013cf59d84aa889d3d20652c46bc",
-  "wasmBytes": 83780104,
-  "programGzipSHA256": "59a9c41ec73ddc0a59cc6d4e7c5d2eb723fb50ee3c4e07f923b3629216171e3e",
-  "programGzipBytes": 16084277,
+  "version": "0.2.0",
+  "tag": "v0.2.0",
+  "runtimeVersion": "20261013-105914-175e2127",
+  "wasmSHA256": "9b3d37007d31af4db92674061306ba7a57c2d848a5aab964a8736b6fbf13481e",
+  "wasmBytes": 83795927,
+  "programGzipSHA256": "e34d1da1cc7105c4b5327831d74da7451a1bced43366adba261965236bc2640d",
+  "programGzipBytes": 16090839,
   "theseusRepository": "https://github.com/evmar/theseus",
   "theseusCommit": "0fe848f1905a651d843668400f0ad46ed4e212c0",
-  "theseusPatchSHA256": "9d506b2bea80c8a50de7239014bd06ecb230615aafb2917b48be9c7d0cb3893e",
+  "theseusPatchSHA256": "127156a9d2b3196e5dbb3f3890f2178d0b623a77f7591ac705bb50b3b994a51b",
   "fontAtlasSHA256": "46c4254841927f04888cf3dce97b3e1baa639bdf7b55cdb57d53b229c6d4bc64",
   "defaultDecodedPreloadBytes": 50040206,
   "optionalCompleteDecodedPreloadBytes": 478398969,
@@ -38,5 +38,108 @@
   "includesGameArchives": false,
   "includesGeneratedOriginalProgram": false,
   "playerSavesIncluded": false,
-  "productionCredentialsIncluded": false
+  "productionCredentialsIncluded": false,
+  "packedResources": {
+    "manifestURL": "/joey/original/resources.manifest.json",
+    "manifestSHA256": "1e85f9d154cd02d666f30929e9f19b4982e11ef5fed3c4961d506bac5071ff0b",
+    "pack": {
+      "path": "/__joey_packed_resources_v1",
+      "url": "/joey/original/resource-packs/5554c09969b2bc03233198843b977174f4b3468cae19cb6c9f3d0b0da10275dc",
+      "length": 179562757,
+      "sha256": "5554c09969b2bc03233198843b977174f4b3468cae19cb6c9f3d0b0da10275dc"
+    }
+  },
+  "originalPackedResources": {
+    "manifestURL": "/joey/original/original-resources.manifest.json",
+    "manifestSHA256": "a08083b1fcb062907d495be83941be755397cd0d78e382fb4d38bb71f95689aa",
+    "pack": {
+      "path": "/__joey_packed_resources_v1",
+      "url": "/joey/original/resource-packs/722216f76a656d878246f6cd4337fde2f9f37895670e54e3a02639c35d6e6ef9",
+      "length": 227949455,
+      "sha256": "722216f76a656d878246f6cd4337fde2f9f37895670e54e3a02639c35d6e6ef9"
+    }
+  },
+  "legacyPackedResources": [
+    {
+      "manifestURL": "/joey/original/original-resources.manifest.json",
+      "manifestSHA256": "a08083b1fcb062907d495be83941be755397cd0d78e382fb4d38bb71f95689aa",
+      "pack": {
+        "path": "/__joey_packed_resources_v1",
+        "url": "/joey/original/resource-packs/722216f76a656d878246f6cd4337fde2f9f37895670e54e3a02639c35d6e6ef9",
+        "length": 227949455,
+        "sha256": "722216f76a656d878246f6cd4337fde2f9f37895670e54e3a02639c35d6e6ef9"
+      }
+    },
+    {
+      "manifestURL": "/joey/original/legacy-resources.manifest.json",
+      "manifestSHA256": "4ff202b30b753adf1fa2487ac352ad4f1e1f4540587b0cea4fedaed0164e7e86",
+      "pack": {
+        "path": "/__joey_packed_resources_v1",
+        "url": "/joey/original/resource-packs/42d626a804979565e5dabe976975c8f5db88b0c4314b9811e44ba4eec2091f49",
+        "length": 270625555,
+        "sha256": "42d626a804979565e5dabe976975c8f5db88b0c4314b9811e44ba4eec2091f49"
+      }
+    }
+  ],
+  "qualityProfile": {
+    "name": "light-rgb6-pcm13",
+    "cardArtworkChannelBits": 6,
+    "pcmEffectiveBits": 13,
+    "maxCardChannelError": 2,
+    "maxPCMSampleError": 4,
+    "scope": "24bit card artwork only; UI, backgrounds, masks, alpha and fonts unchanged; RIFF PCM payload only, sample rates/channels/lengths unchanged"
+  },
+  "brotliDecoder": {
+    "package": "brotli-dec-wasm",
+    "version": "2.3.2",
+    "packageSHA256": "5006ea904407e2f44ad6616100de196c39af591b772f764ba66fdd720b5d2ab5",
+    "upstreamWasmSHA256": "79b29cb1790560f0a0f32b4a31d935e2782875e4a367fde23c81d986b327ec3f",
+    "files": {
+      "brotli-decoder.mjs": "19cf5d13fa62df4ebdf3fcefddeefa54b41fd7cca83be2b553dd5a1e9c81b2d0",
+      "brotli-decoder.wasm": "609f39231686f9feb0fcc68a18d32067423d64f40690c75652c21934ec370909",
+      "brotli-decoder-NOTICE.txt": "e703782a91e438b3f3a193c91981abe37fa249fda58554afa1fc36260c761edd"
+    },
+    "linearMemoryLimitBytes": 33554432,
+    "wasmBytes": 208441
+  },
+  "toolchain": {
+    "rustc": {
+      "binary": "rustc",
+      "commit-hash": "db8f076d2619ce2585b0380dda06e8da25a40da4",
+      "commit-date": "2026-10-03",
+      "host": "x86_64-unknown-linux-gnu",
+      "release": "1.101.0-nightly",
+      "LLVM version": "23.1.1"
+    },
+    "profile": "fast",
+    "target": "wasm32-unknown-unknown",
+    "wasmBindgen": "0.2.121",
+    "rustFlags": "-Ctarget-feature=+atomics,+bulk-memory -Clink-arg=--shared-memory -Clink-arg=--max-memory=1073741824 -Clink-arg=--import-memory -Clink-arg=--export=__heap_base -Clink-arg=--export=__wasm_init_tls -Clink-arg=--export=__tls_size -Clink-arg=--export=__tls_align -Clink-arg=--export=__tls_base",
+    "wasmSHA256": "9b3d37007d31af4db92674061306ba7a57c2d848a5aab964a8736b6fbf13481e"
+  },
+  "runtimeSources": {
+    "games/joey/original/app.mjs": "aba192dde75b086a038ef297109d7fa2202afc334cfa35abdd2741f59ff5b487",
+    "games/joey/reverse/brotli-block-decoder.mjs": "bfdea6e706b70c32f02f9f98482478e71eb4be8809a1dd489fdecae4f6f8d722",
+    "games/joey/reverse/brotli-decoder-worker.mjs": "9314cbb78fa4c18a7b3139aec957a860cc28057fe83f6ea405e134b8936f65e0",
+    "games/joey/reverse/brotli-decoder.mjs": "19cf5d13fa62df4ebdf3fcefddeefa54b41fd7cca83be2b553dd5a1e9c81b2d0",
+    "games/joey/reverse/brotli-decoder.wasm": "609f39231686f9feb0fcc68a18d32067423d64f40690c75652c21934ec370909",
+    "games/joey/original/browser-host.mjs": "e18a01e8faabf04cfc3e0479db7c336f7374015cec2516c98da28449125ea0fd",
+    "games/joey/original/collection-catalog.mjs": "573ae90749df106c26c3dffb05dbcbf6064920e11635e34521b504f36ac0e1ae",
+    "games/joey/original/collection-patch.mjs": "69105ad7556d605d7d59e0f32688db6b8ee1d2e0f20c7e883e66530203c2fc99",
+    "games/joey/original/index.html": "4c82656a620f813b1cbc4e9411dd9522cce523ed29d9dcd8ad5a6d6d688c105a",
+    "games/joey/original/legacy-resources.manifest.json": "4ff202b30b753adf1fa2487ac352ad4f1e1f4540587b0cea4fedaed0164e7e86",
+    "games/joey/original/original-resources.manifest.json": "a08083b1fcb062907d495be83941be755397cd0d78e382fb4d38bb71f95689aa",
+    "games/joey/original/original-worker.mjs": "0cb52edef3c79c9e774549e7224dd52896071f67ed2f062057f13ee2c7c32f12",
+    "games/joey/reverse/packed-resource-reader.mjs": "af55daa8ca43680f77a300c89b0cd2faae09d12ddf857b0b45357d8fe6cf48d8",
+    "games/joey/reverse/pcm-audio-host.mjs": "3625849ae0b76c2820eb4ce8875af09ad17ad0e6f502fb602c104a9e9e609d55",
+    "games/joey/reverse/pcm-worklet.js": "6c45afade2ccb1142768d72a5f864ec931a5352faa6e0bb6875624538dcb2ba0",
+    "games/joey/original/player-files.mjs": "a869508437569d998af95547a8b80045c7290d06863066a725ecbbee07a95878",
+    "games/joey/reverse/range-reader.mjs": "2286d7ecd4d032539f5ef7d8d7420bde22187294e205bd68b9a36a3d58cc57ac",
+    "games/joey/reverse/resource-byte-filter.mjs": "2b23005474408eaff9bc0e5a05063d7f35e4a531dadea0dfb6958a3ab30a30cb",
+    "games/joey/original/resource-cache.mjs": "2b829ee61ff5f73c130bb9726f7d599ef658dcf78971b6c7644bbed7008bcbe2",
+    "games/joey/original/resource-reader.mjs": "bb7b1ba5c241ddd6df4ce5d5e4fbd52a0a6388e600277ff3c5ac5b85c7727c11",
+    "games/joey/original/server.mjs": "2b6aa0a722390fd4bc883395c33f72b577a788182ef57ef90bde99ea2dd81cad",
+    "games/joey/reverse/structured-byte-filter.mjs": "8bbf48137a6cfe27389009ad93f3aa3f8b27cdc423092434fd2a6ba4c10b1d0f",
+    "games/joey/original/style.css": "f2e114bda86b48bc6f691d6e00e9b93f480cad5e1acfe843c0f3ca39bae1c4ae"
+  }
 }

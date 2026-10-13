@@ -1,31 +1,28 @@
-// Real IndexedDB across reloads and real authenticated source bytes, with
+// Real IndexedDB across reloads and real public source bytes, with
 // controlled cuts inside a response body. Never reads a user's player profile.
 import assert from 'node:assert/strict';
 import {createRequire} from 'node:module';
 import {readFile,writeFile,mkdir} from 'node:fs/promises';
 import {resolve} from 'node:path';
-import {scryptSync} from 'node:crypto';
 import {pathToFileURL} from 'node:url';
 const {chromium,webkit}=createRequire(import.meta.url)('playwright');
 const root=resolve('.bridge/joey-web/reverse/output/original-preview');
 const revision=JSON.parse(await readFile(resolve(root,'revision.json'),'utf8'));
 const {createOriginalServer}=await import(pathToFileURL(resolve(root,'server.mjs')));
-const config={filesRoot:root,resourcesRoot:resolve('.bridge/joey-web/reverse/input'),origin:'http://127.0.0.1',passwordSalt:'resume-test',passwordHash:scryptSync('resume-test','resume-test',32).toString('hex')};
+const config={filesRoot:root,resourcesRoot:resolve('.bridge/joey-web/reverse/input'),packedResourcesRoot:resolve('.bridge/joey-web/reverse/output/compression-20261013/light-pack'),origin:'http://127.0.0.1'};
 const server=await createOriginalServer(config);await new Promise(done=>server.listen(0,'127.0.0.1',done));config.origin='http://127.0.0.1:'+server.address().port;
 const base=config.origin+'/joey/original/',reports=[];
 const evidence=resolve('.bridge/joey-web/reverse/output','original-download-resume-'+revision.version);await mkdir(evidence,{recursive:true});
 try{
- const login=await fetch(base+'api/login',{method:'POST',headers:{Origin:config.origin,'Content-Type':'application/json'},body:JSON.stringify({password:'resume-test'})});assert.equal(login.status,200);
- const cookie=login.headers.get('set-cookie').split(';')[0];
- const session=await (await fetch(base+'api/session',{headers:{Cookie:cookie}})).json();
- assert.equal((await fetch(base+'program-bytes',{headers:{Range:'bytes=0-1'}})).status,401);
- assert.equal((await fetch(base+'program-bytes',{headers:{Cookie:cookie,Range:'bytes=0-1048576'}})).status,416);
+ const session=await (await fetch(base+'api/session')).json();
+ assert.equal((await fetch(base+'program-bytes',{headers:{Range:'bytes=0-1'}})).status,206);
+ assert.equal((await fetch(base+'program-bytes',{headers:{Range:'bytes=0-1048576'}})).status,416);
  const packed=await readFile(resolve(root,'joey_original_bg.wasm.gz'));
- const slice=await fetch(base+'program-bytes',{headers:{Cookie:cookie,Range:'bytes=131072-262143','Accept-Encoding':'gzip'}});
+ const slice=await fetch(base+'program-bytes',{headers:{Range:'bytes=131072-262143','Accept-Encoding':'gzip'}});
  assert.equal(slice.status,206);assert.equal(slice.headers.get('content-encoding'),null);assert.deepEqual(Buffer.from(await slice.arrayBuffer()),packed.subarray(131072,262144));
  for(const [name,engine]of [['chromium',chromium],['webkit',webkit]]){
   const browser=await engine.launch(name==='chromium'?{...(process.env.JOEY_CHROMIUM_PATH?{executablePath:process.env.JOEY_CHROMIUM_PATH}:{}),headless:true,args:['--no-sandbox','--disable-dev-shm-usage']}:{headless:true});
-  const context=await browser.newContext();await context.addCookies([{name:'joey_original_session',value:cookie.slice(22),url:config.origin,httpOnly:true,sameSite:'Strict',secure:false}]);
+  const context=await browser.newContext();
   const page=await context.newPage();
   try{
    await page.goto(base,{waitUntil:'networkidle'});
@@ -109,5 +106,5 @@ try{
    console.log(JSON.stringify({browser:name,resumed:cases.map(c=>({file:c.file,prefix:c.stopped.prefixBytes,remaining:c.resumed.stats.downloadedBytes})),automaticRetries:automatic.stats.networkRetries,integrity,programCacheUnavailableFallback:unavailable.byteExact,ownSavePreserved:true}));
   }finally{await context.close();await browser.close();}
  }
- await writeFile(resolve(evidence,'checks.json'),JSON.stringify({version:revision.version,wasmSHA256:revision.wasmSHA256,programGzipSHA256:revision.programGzipSHA256,scope:'real authenticated source ranges and IndexedDB; simulated body interruption, reload and automatic retry in desktop Chromium/WebKit; not physical phone performance',reports},null,2)+'\n');
+ await writeFile(resolve(evidence,'checks.json'),JSON.stringify({version:revision.version,wasmSHA256:revision.wasmSHA256,programGzipSHA256:revision.programGzipSHA256,scope:'real public source ranges and IndexedDB; simulated body interruption, reload and automatic retry in desktop Chromium/WebKit; not physical phone performance',reports},null,2)+'\n');
 }finally{server.closeAllConnections();await new Promise(done=>server.close(done));}

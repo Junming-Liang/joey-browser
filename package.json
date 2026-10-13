@@ -1,18 +1,23 @@
 {
   "name": "joey-browser",
-  "version": "0.1.0",
+  "version": "0.2.0",
+  "license": "MIT",
   "private": true,
-  "description": "Original Joey game browser compatibility runtime and resource gateway",
+  "description": "Browser-local WebAssembly compatibility runtime for the original Joey game",
   "type": "module",
   "engines": {
     "node": ">=22"
   },
   "scripts": {
-    "test": "node scripts/verify-source.mjs && node games/joey/reverse/verify_resource_gateway_pacing.mjs",
+    "test": "node scripts/verify-source.mjs && node games/joey/reverse/verify_resource_gateway_pacing.mjs && node games/joey/reverse/check_pcm_host.mjs && python3 -B -m unittest discover -s games/joey/original -p test_deploy_preview.py",
     "test:downloads": "node games/joey/original/check_download_resume.mjs",
     "test:startup": "node games/joey/original/check_startup.mjs .bridge/joey-web/reverse/output/original-preview --restart --portrait --delay-resource --cache",
     "test:game": "node games/joey/original/check_preview.mjs --resource-trace",
-    "build:preview": "python3 games/joey/original/build_preview.py"
+    "build:preview": "python3 games/joey/original/build_preview.py",
+    "test:install": "node games/joey/original/check_compressed_install.mjs",
+    "test:decoder": "node games/joey/original/check_brotli_decoder.mjs",
+    "test:quality": "node games/joey/original/check_resource_quality.mjs",
+    "test:profile": "node games/joey/original/check_profile_integrity.mjs"
   },
   "devDependencies": {
     "playwright": "1.63.0"

@@ -14,3 +14,11 @@ __pycache__/
 config.local.json
 *-private.json
 .DS_Store
+
+# The only distributed WASM is the licensed, pinned Brotli decoder.
+!games/joey/reverse/brotli-decoder.wasm
+*.pack
+*.bundle
+*.7z
+*.pem
+*.key

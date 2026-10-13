@@ -1,0 +1,13 @@
+{
+  "package": "brotli-dec-wasm",
+  "version": "2.3.2",
+  "packageSHA256": "5006ea904407e2f44ad6616100de196c39af591b772f764ba66fdd720b5d2ab5",
+  "upstreamWasmSHA256": "79b29cb1790560f0a0f32b4a31d935e2782875e4a367fde23c81d986b327ec3f",
+  "files": {
+    "brotli-decoder.mjs": "19cf5d13fa62df4ebdf3fcefddeefa54b41fd7cca83be2b553dd5a1e9c81b2d0",
+    "brotli-decoder.wasm": "609f39231686f9feb0fcc68a18d32067423d64f40690c75652c21934ec370909",
+    "brotli-decoder-NOTICE.txt": "e703782a91e438b3f3a193c91981abe37fa249fda58554afa1fc36260c761edd"
+  },
+  "linearMemoryLimitBytes": 33554432,
+  "wasmBytes": 208441
+}

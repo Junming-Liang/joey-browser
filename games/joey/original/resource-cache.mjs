@@ -4,8 +4,8 @@ const hex=bytes=>Array.from(new Uint8Array(bytes),byte=>byte.toString(16).padSta
 const digest=bytes=>crypto.subtle.digest('SHA-256',bytes).then(hex);
 export function createOriginalResourceCache(report,{databaseName='joey-original-resource-bytes-v1',maxBytes=536870912,maxEntries=4096}={}){
   report.available=false;report.capacityBytes=maxBytes;
-  let disabled=false;
-  // Four validated archive pages, bounded independently of the asset reader.
+  let disabled=false,epoch=0;
+  // Validated pages and containing spans share the existing 4MiB budget.
   const pages=new Map();let pageMemory=0;
   const disable=error=>{disabled=true;report.available=false;report.reason=String(error?.name||error).slice(0,200);};
   const opened=new Promise(resolve=>{
@@ -27,14 +27,16 @@ export function createOriginalResourceCache(report,{databaseName='joey-original-
   const item=async(database,cacheKey)=>new Promise((resolve,reject)=>{const request=database.transaction('blocks','readonly').objectStore('blocks').get(cacheKey);request.onsuccess=()=>resolve(request.result);request.onerror=()=>reject(request.error);});
   const write=async(file,start,end,bytes,partial)=>{
     const baseKey=key(file,start,end),cacheKey=baseKey+(partial?':partial':'');
-    if(!baseKey||disabled||!(bytes instanceof Uint8Array)||bytes.length>maxBytes||!bytes.length||bytes.length>(end-start+1)||(partial?bytes.length===end-start+1:bytes.length!==end-start+1))return;
+    if(!baseKey||disabled||!(bytes instanceof Uint8Array)||bytes.length>maxBytes||!bytes.length||bytes.length>(end-start+1)||(partial?bytes.length===end-start+1:bytes.length!==end-start+1))return false;
     try{
-      const database=await opened;if(!database||disabled)return;
+      const database=await opened;if(!database||disabled)return false;
       const sha256=await digest(bytes);
+      if(disabled)return false;
+      if(!partial&&pages.has(baseKey)){pageMemory-=pages.get(baseKey).length;pages.delete(baseKey);report.pageMemoryBytes=pageMemory;}
       await transaction(database,['blocks','metadata'],tx=>{
         const metadata=tx.objectStore('metadata'),blocks=tx.objectStore('blocks'),request=metadata.getAll();
         request.onsuccess=()=>{
-          const prior=request.result.filter(item=>item.key!==cacheKey&&(partial||item.key!==baseKey+':partial')).sort((a,b)=>a.createdAt-b.createdAt);
+          const prior=request.result.filter(item=>item.kind!=='installation'&&item.key!==cacheKey&&(partial||item.key!==baseKey+':partial')).sort((a,b)=>a.createdAt-b.createdAt);
           let size=prior.reduce((sum,item)=>sum+item.length,0),count=prior.length;
           for(const item of prior){if(size+bytes.length<=maxBytes&&count<maxEntries)break;metadata.delete(item.key);blocks.delete(item.key);size-=item.length;count--;report.evictions=(report.evictions||0)+1;report.evictedBytes=(report.evictedBytes||0)+item.length;}
           if(!partial){metadata.delete(baseKey+':partial');blocks.delete(baseKey+':partial');}
@@ -42,38 +44,106 @@ export function createOriginalResourceCache(report,{databaseName='joey-original-
           report.storedBytes=size+bytes.length;report.entries=count+1;
         };
       });
-    }catch(error){disable(error);}
+      return true;
+    }catch(error){disable(error);return false;}
   };
-  const block=async(database,file,start,end)=>{
+  const block=async(database,file,start,end,keep=false)=>{
+    const observed=epoch;
     const cacheKey=key(file,start,end);if(!cacheKey)return null;
     if(pages.has(cacheKey)){const bytes=pages.get(cacheKey);pages.delete(cacheKey);pages.set(cacheKey,bytes);return bytes;}
     const item=await new Promise((resolve,reject)=>{const request=database.transaction('blocks','readonly').objectStore('blocks').get(cacheKey);request.onsuccess=()=>resolve(request.result);request.onerror=()=>reject(request.error);});
-    if(!item)return null;
-    if(!(item.bytes instanceof Uint8Array)||item.bytes.length!==end-start+1||await digest(item.bytes)!==item.sha256){await remove(database,cacheKey);report.discarded=(report.discarded||0)+1;return null;}
-    if(start%pageBytes===0&&end===Math.min(file.length,start+pageBytes)-1){
+    if(!item||disabled||observed!==epoch)return null;
+    if(!(item.bytes instanceof Uint8Array)||item.bytes.length!==end-start+1){await remove(database,cacheKey);report.discarded=(report.discarded||0)+1;return null;}
+    const checksum=await digest(item.bytes);if(disabled||observed!==epoch)return null;
+    if(checksum!==item.sha256){await remove(database,cacheKey);report.discarded=(report.discarded||0)+1;return null;}
+    if((keep||start%pageBytes===0&&end===Math.min(file.length,start+pageBytes)-1)&&item.bytes.length<=4*pageBytes){
       if(pages.has(cacheKey))pageMemory-=pages.get(cacheKey).length;
       pages.set(cacheKey,item.bytes);pageMemory+=item.bytes.length;
-      while(pageMemory>4*pageBytes){const oldest=pages.keys().next().value;pageMemory-=pages.get(oldest).length;pages.delete(oldest);}
+      while(pageMemory>4*pageBytes||pages.size>4096){const oldest=pages.keys().next().value;pageMemory-=pages.get(oldest).length;pages.delete(oldest);}
       report.pageMemoryBytes=pageMemory;
     }
     return item.bytes;
   };
+  const inventory=async()=>{
+    const database=await opened;if(!database||disabled)return null;
+    return new Promise((resolve,reject)=>{const request=database.transaction('metadata','readonly').objectStore('metadata').getAll();request.onsuccess=()=>resolve(request.result);request.onerror=()=>reject(request.error);});
+  };
+  const covers=(records,files)=>{
+    const lengths=new Map(records.filter(item=>item.kind!=='installation').map(item=>[item.key,item.length]));
+    report.storedBytes=[...lengths.values()].reduce((sum,length)=>sum+length,0);report.entries=lengths.size;
+    return files.every(file=>{for(let start=0;start<file.length;start+=pageBytes){const end=Math.min(file.length,start+pageBytes)-1;if(lengths.get(key(file,start,end))!==end-start+1)return false;}return true;});
+  };
+  const installationKey=(file,manifestSHA)=>'installation:'+file.sha256+':'+manifestSHA;
   return {
     async ready(){const database=await opened;return Boolean(database&&!disabled);},
+    async storedBytes(file){
+      if(!key(file,0,0))return 0;
+      try{const records=await inventory(),prefix=file.sha256+':'+file.path+':';return (records||[]).filter(item=>item.kind!=='installation'&&item.key.startsWith(prefix)).reduce((sum,item)=>sum+item.length,0);}
+      catch(error){disable(error);return 0;}
+    },
+    // Coverage is an admission hint. Each actual read still verifies its bytes;
+    // eviction/corruption after this check falls back to the small-range reader.
+    async hasComplete(files,manifestSHA){
+      try{const records=await inventory();return Boolean(records&&covers(records,files)&&(!manifestSHA||records.some(item=>item.key===installationKey(files[0],manifestSHA)&&item.kind==='installation')));}
+      catch(error){disable(error);return false;}
+    },
+    async markComplete(file,manifestSHA){
+      if(!/^[a-f0-9]{64}$/.test(manifestSHA||'')||!key(file,0,0))throw Error('Invalid installation identity');
+      try{
+        const records=await inventory();if(!records||!covers(records,[file]))return false;
+        const database=await opened;
+        await transaction(database,['metadata'],tx=>tx.objectStore('metadata').put({key:installationKey(file,manifestSHA),kind:'installation',length:0,createdAt:Date.now()}));return !disabled;
+      }catch(error){disable(error);return false;}
+    },
     async readPartial(file,start,end){
       const baseKey=key(file,start,end);if(!baseKey||disabled)return null;
+      const observed=epoch;
       try{
         const database=await opened;if(!database||disabled)return null;
         const cacheKey=baseKey+':partial',saved=await item(database,cacheKey);if(!saved)return null;
-        if(!(saved.bytes instanceof Uint8Array)||!saved.bytes.length||saved.bytes.length>=end-start+1||await digest(saved.bytes)!==saved.sha256){await remove(database,cacheKey);report.discarded=(report.discarded||0)+1;return null;}
+        if(disabled||observed!==epoch)return null;
+        if(!(saved.bytes instanceof Uint8Array)||!saved.bytes.length||saved.bytes.length>=end-start+1){await remove(database,cacheKey);report.discarded=(report.discarded||0)+1;return null;}
+        const checksum=await digest(saved.bytes);if(disabled||observed!==epoch)return null;
+        if(checksum!==saved.sha256){await remove(database,cacheKey);report.discarded=(report.discarded||0)+1;return null;}
         return saved.bytes;
       }catch(error){disable(error);return null;}
     },
     savePartial(file,start,end,bytes){return write(file,start,end,bytes,true);},
+    async discardPartial(file,start,end){
+      const baseKey=key(file,start,end);if(!baseKey||disabled)return false;
+      try{const database=await opened;if(!database||disabled)return false;await remove(database,baseKey+':partial');return true;}
+      catch(error){disable(error);return false;}
+    },
+    async invalidate(file,start,end){
+      if(!Number.isSafeInteger(start)||!Number.isSafeInteger(end)||start<0||start>end||end>=file.length||!key(file,start,end))throw Error('Invalid resource cache invalidation');
+      if(disabled)return false;
+      epoch++;
+      const prefix=file.sha256+':'+file.path+':';
+      const overlaps=cacheKey=>{if(!cacheKey.startsWith(prefix))return false;const span=/^(\d+):(\d+)(?::partial)?$/.exec(cacheKey.slice(prefix.length));return Boolean(span&&Number(span[1])<=end&&Number(span[2])>=start);};
+      for(const cacheKey of pages.keys())if(overlaps(cacheKey)){pageMemory-=pages.get(cacheKey).length;pages.delete(cacheKey);}report.pageMemoryBytes=pageMemory;
+      try{
+        const database=await opened;if(!database||disabled)return false;
+        await transaction(database,['blocks','metadata'],tx=>{
+          const metadata=tx.objectStore('metadata'),blocks=tx.objectStore('blocks'),request=metadata.getAll();
+          request.onsuccess=()=>{
+            let size=0,count=0;
+            for(const record of request.result){
+              if(overlaps(record.key)){metadata.delete(record.key);blocks.delete(record.key);report.invalidations=(report.invalidations||0)+1;report.invalidatedBytes=(report.invalidatedBytes||0)+record.length;}
+              else if(record.kind!=='installation'){size+=record.length;count++;}
+            }
+            report.storedBytes=size;report.entries=count;
+          };
+        });
+        for(const cacheKey of pages.keys())if(overlaps(cacheKey)){pageMemory-=pages.get(cacheKey).length;pages.delete(cacheKey);}
+        report.pageMemoryBytes=pageMemory;return true;
+      }catch(error){disable(error);return false;}
+    },
     async discard(file){
       if(disabled||!key(file,0,0))return;
-      const database=await opened;if(!database)return;
+      epoch++;
       const prefix=file.sha256+':'+file.path+':';
+      for(const cacheKey of pages.keys())if(cacheKey.startsWith(prefix)){pageMemory-=pages.get(cacheKey).length;pages.delete(cacheKey);}report.pageMemoryBytes=pageMemory;
+      const database=await opened;if(!database||disabled)return;
       await transaction(database,['blocks','metadata'],tx=>{
         const metadata=tx.objectStore('metadata'),blocks=tx.objectStore('blocks'),request=metadata.getAll();
         request.onsuccess=()=>{for(const item of request.result)if(item.key.startsWith(prefix)){metadata.delete(item.key);blocks.delete(item.key);}};
@@ -81,11 +151,19 @@ export function createOriginalResourceCache(report,{databaseName='joey-original-
       for(const cacheKey of pages.keys())if(cacheKey.startsWith(prefix)){pageMemory-=pages.get(cacheKey).length;pages.delete(cacheKey);}
       report.pageMemoryBytes=pageMemory;
     },
-    async read(file,start,end){
+    async read(file,start,end,containingSpan){
       const cacheKey=key(file,start,end);if(!cacheKey||disabled)return null;
       try{
         const database=await opened;if(!database||disabled)return null;
+        const parent=containingSpan&&Number.isSafeInteger(containingSpan.start)&&Number.isSafeInteger(containingSpan.end)&&containingSpan.start>=0&&containingSpan.start<=start&&containingSpan.end>=end&&containingSpan.end<file.length?containingSpan:null;
+        if(parent&&pages.has(key(file,parent.start,parent.end))){const bytes=await block(database,file,parent.start,parent.end,true);if(bytes)return bytes.slice(start-parent.start,end-parent.start+1);}
         const exact=await block(database,file,start,end);if(exact)return exact;
+        // Live music uses smaller ranges. Reuse validated pages from earlier
+        // versions and the unchanged startup plan without downloading them again.
+        if(parent){
+          const bytes=await block(database,file,parent.start,parent.end,true);
+          if(bytes)return bytes.slice(start-parent.start,end-parent.start+1);
+        }
         const result=new Uint8Array(end-start+1);
         for(let position=start;position<=end;){
           const first=Math.floor(position/pageBytes)*pageBytes,last=Math.min(file.length,first+pageBytes)-1;
@@ -97,6 +175,6 @@ export function createOriginalResourceCache(report,{databaseName='joey-original-
       }catch(error){disable(error);return null;}
     },
     save(file,start,end,bytes){return write(file,start,end,bytes,false);},
-    async close(){const database=await opened;disabled=true;pages.clear();pageMemory=0;report.pageMemoryBytes=0;database?.close();}
+    async close(){disabled=true;epoch++;report.available=false;pages.clear();pageMemory=0;report.pageMemoryBytes=0;const database=await opened;database?.close();}
   };
 }

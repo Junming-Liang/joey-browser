@@ -1,9 +1,11 @@
+import {collectionCatalog} from './collection-catalog.mjs';
+const initialDeckBytes=Buffer.from(collectionCatalog.decks[0].bytes,'base64').length;
 // Test the shipped startup and preserve evidence separately from full-duel checks.
 import {createRequire} from 'node:module';
 import {readFile,writeFile,mkdir} from 'node:fs/promises';
 import {resolve} from 'node:path';
 import {pathToFileURL} from 'node:url';
-import {scryptSync,createHash} from 'node:crypto';
+import {createHash} from 'node:crypto';
 const {chromium,webkit}=createRequire(import.meta.url)('playwright');
 const root=resolve(process.argv[2]||'.bridge/joey-web/reverse/output/original-startup-preview');
 const restart=process.argv.includes('--restart');
@@ -18,23 +20,24 @@ const initialWasmSHA256=initialWasmPath?createHash('sha256').update(await readFi
 const revision=JSON.parse(await readFile(resolve(root,'revision.json'),'utf8'));
 const evidence=resolve('.bridge/joey-web/reverse/output','original-startup-check-'+revision.version+(restart?'-restart':'')+(initialWasmSHA256?'-from-'+initialWasmSHA256.slice(0,12):'')+(portrait?'-portrait':'')+(delayResource?'-loading':'')+(cacheCheck?'-cache':''));await mkdir(evidence,{recursive:true});
 const {createOriginalServer}=await import(pathToFileURL(resolve(root,'server.mjs')));
-const config={filesRoot:root,resourcesRoot:resolve('.bridge/joey-web/reverse/input'),origin:'http://127.0.0.1',passwordSalt:'startup-check',passwordHash:scryptSync('startup-check','startup-check',32).toString('hex')};
+const config={filesRoot:root,resourcesRoot:resolve('.bridge/joey-web/reverse/input'),packedResourcesRoot:resolve('.bridge/joey-web/reverse/output/compression-20261013/light-pack'),origin:'http://127.0.0.1'};
 const server=await createOriginalServer(config);await new Promise(done=>server.listen(0,'127.0.0.1',done));config.origin='http://127.0.0.1:'+server.address().port;
 const prefix=config.origin+'/joey/original/',assert=(condition,message)=>{if(!condition)throw Error(message);},reports=[];
 try{
- const login=await fetch(prefix+'api/login',{method:'POST',headers:{Origin:config.origin,'Content-Type':'application/json'},body:JSON.stringify({password:'startup-check'})});assert(login.status===200,'Login');
- const cookie=login.headers.get('set-cookie').split(';')[0];
  const failureHeaders={Origin:config.origin,'Content-Type':'application/json'};
- assert((await fetch(prefix+'api/failure',{method:'POST',headers:failureHeaders,body:'{"error":"unauthenticated"}'})).status===401,'Failure report requires session');
- assert((await fetch(prefix+'api/failure',{method:'POST',headers:{...failureHeaders,Origin:'https://invalid.example',Cookie:cookie},body:'{"error":"foreign-origin"}'})).status===403,'Failure report requires same origin');
- assert((await fetch(prefix+'api/failure',{method:'POST',headers:{...failureHeaders,Cookie:cookie},body:'{"error":"'+ 'x'.repeat(8192)+'"}'})).status===413,'Failure report body limit');
+ assert((await fetch(prefix+'api/failure',{method:'POST',headers:failureHeaders,body:'{"error":"public-diagnostic"}'})).status===200,'Public failure report works without a session');
+ assert((await fetch(prefix+'api/failure',{method:'POST',headers:{...failureHeaders,Origin:'https://invalid.example'},body:'{"error":"foreign-origin"}'})).status===403,'Failure report requires same origin');
+ assert((await fetch(prefix+'api/failure',{method:'POST',headers:{...failureHeaders},body:'{"error":"'+ 'x'.repeat(8192)+'"}'})).status===413,'Failure report body limit');
+ const limitedHeaders={...failureHeaders,'X-Real-IP':'startup-rate-check'};
+ for(let i=0;i<4;i++)assert((await fetch(prefix+'api/failure',{method:'POST',headers:limitedHeaders,body:'{"error":"rate-check"}'})).status===200,'Allowed diagnostic quota');
+ assert((await fetch(prefix+'api/failure',{method:'POST',headers:limitedHeaders,body:'{"error":"rate-check"}'})).status===429,'Public diagnostics remain bounded');
  for(const [name,engine]of [['chromium',chromium],['webkit',webkit]]){
   const browser=await engine.launch(name==='chromium'?{...(process.env.JOEY_CHROMIUM_PATH?{executablePath:process.env.JOEY_CHROMIUM_PATH}:{}),headless:true,args:['--no-sandbox','--disable-dev-shm-usage']}:{headless:true});
   try{
    for(const variant of [{isolated:true},{isolated:false},...(cacheCheck?[{isolated:true,cacheUnavailable:true}]:[])]){
     const {isolated,cacheUnavailable}=variant,caseTag=cacheUnavailable?'cache-unavailable':String(isolated);
     const context=await browser.newContext({viewport,hasTouch:true,isMobile:true});
-    await context.addCookies([{name:'joey_original_session',value:cookie.slice(22),url:config.origin,httpOnly:true,sameSite:'Strict',secure:false}]);
+
     if(!isolated)await context.addInitScript(()=>Object.defineProperty(globalThis,'crossOriginIsolated',{value:false}));
     const page=await context.newPage(),errors=[];page.on('pageerror',error=>errors.push(String(error)));const failureResponses=[];
     if(isolated&&initialWasmPath)await page.route('**/joey_original_bg.wasm',route=>route.fulfill({path:initialWasmPath,contentType:'application/wasm'}));
@@ -59,14 +62,14 @@ try{
      await page.waitForFunction(()=>window.joeyOriginal?.renders>=4||!document.getElementById('failure-details').hidden,null,{timeout:120000});
      const report=await page.evaluate(()=>({probe:window.joeyOriginal,status:document.getElementById('status').textContent,failure:document.getElementById('failure-report').textContent,detailsHidden:document.getElementById('failure-details').hidden,copyHidden:document.getElementById('copy-error').hidden}));
      if(isolated){assert(report.probe?.renders>=4,'Original first picture: '+JSON.stringify(report));assert(report.detailsHidden,'Normal startup must not show failure');assert(report.probe.audio.contextState==='running','Audio started by gesture');assert(report.probe.programProgress.received===report.probe.programProgress.total&&report.probe.programProgress.total>0,'Program progress must count all decompressed bytes');const box=await page.locator('canvas').boundingBox();assert(box?.width>0&&box?.height>0,'Original canvas must have visible dimensions');}
-     else{assert(report.status.includes('共享内存'),'Missing isolation diagnostic');assert(!report.copyHidden&&!report.detailsHidden,'Copy and visible failure details');const details=JSON.parse(report.failure);assert(details.environment.isolated===false&&details.failure.startupPhase==='creating-host','Exact failing capability and phase');await recorded;assert(failureResponses.includes(200),'Authenticated failure was recorded');}
+     else{assert(report.status.includes('共享内存'),'Missing isolation diagnostic');assert(!report.copyHidden&&!report.detailsHidden,'Copy and visible failure details');const details=JSON.parse(report.failure);assert(details.environment.isolated===false&&details.failure.startupPhase==='creating-host','Exact failing capability and phase');await recorded;assert(failureResponses.includes(200),'Public failure was recorded');}
      assert(errors.length===0,'Page errors: '+errors.join(';'));
      const record={browser:name,isolated,version:revision.version,wasmSHA256:isolated&&initialWasmSHA256||revision.wasmSHA256,...report,errors,failureResponses};reports.push(record);
      await page.screenshot({path:resolve(evidence,name+'-'+caseTag+'.png')});await writeFile(resolve(evidence,name+'-'+caseTag+'.json'),JSON.stringify(record,null,2)+'\n');
      console.log(JSON.stringify({browser:name,isolated,renders:report.probe?.renders||0,status:report.status,failureResponses}));
      if(isolated&&restart){
       const saves=await page.evaluate(async()=>{const {openPlayerFiles}=await import('./player-files.mjs');const files=await openPlayerFiles();try{return await Promise.all((await files.load()).map(async file=>({path:file.path,length:file.bytes.length,sha256:Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',file.bytes)),byte=>byte.toString(16).padStart(2,'0')).join('')})));}finally{files.close();}});
-      assert(saves.some(file=>file.path==='/deck.ydc'&&file.length===100)&&saves.some(file=>file.path.endsWith('/system.dat')&&file.length===5062),'Original startup created own fresh files');
+      assert(saves.some(file=>file.path==='/deck.ydc'&&file.length===initialDeckBytes)&&saves.some(file=>file.path.endsWith('/system.dat')&&file.length===5062),'Original startup created own fresh files');
       if(initialWasmPath)await page.unroute('**/joey_original_bg.wasm');
       await page.reload({waitUntil:'networkidle'});await page.waitForFunction(()=>!document.getElementById('start').disabled);if(cacheUnavailable)await page.evaluate(disableResourceStorage);await page.locator('#start').tap();
       await page.waitForFunction(()=>window.joeyOriginal?.renders>=120||!document.getElementById('failure-details').hidden,null,{timeout:120000});

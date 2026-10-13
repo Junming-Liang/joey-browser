@@ -68,5 +68,9 @@ self.onmessage=async({data:{memory,task,module,manifest=[],program,initialFiles=
    exe.mount_file(file.path,file.bytes);
   }
   exe.set_trace(traceSpec);self.postMessage({stage:'instantiated'});exe.main();self.postMessage({stage:'returned'});
- }catch(error){self.postMessage({stage:'failed',task:task||null,error:String(error),errorName:error.name,stack:error.stack});}
+ }catch(error){
+  if(error!==null&&typeof error==='object'&&Object.hasOwn(error,'__joeyProcessExit')&&Object.hasOwn(error,'exitCode')&&error.__joeyProcessExit===true&&Number.isInteger(error.exitCode)&&error.exitCode>=0&&error.exitCode<=0xffffffff){
+   self.postMessage({stage:'returned',task:task||null,exitCode:error.exitCode});
+  }else self.postMessage({stage:'failed',task:task||null,error:String(error),errorName:error?.name,stack:error?.stack});
+ }
 };

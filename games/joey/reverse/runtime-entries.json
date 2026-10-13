@@ -38,5 +38,20 @@
     "address": "005b4890",
     "bytes": "568b742408668b0650e842dae4ff8a4e02",
     "reason": "Actual shipped Chromium missing indirect target at first computer play, retained in original-startup-chromium-6f3d23be9a66.json. File-backed .text entry, 16-byte aligned after RET and eleven NOPs; RET at 005b48c7. Original eight-byte activation priority row 005dd4b8 has card ID 1429 and pointer 005b4890; five bounded original direct call sites also verified. Preserve original predicate instructions; no replacement card rules."
+  },
+  {
+    "address": "005c1e2c",
+    "bytes": "c3",
+    "reason": "Actual original main-menu Escape exit reproduced in task-owned Chromium at render618 on shipped20261007-151526-bef9967f. Original file-backed .text byte is RET, immediately after caller005c1e20 pushes this address and registers it through CRT005c387c; preserve the original no-op atexit callback rather than bypassing shutdown."
+  },
+  {
+    "address": "005cae87",
+    "bytes": "e848020000803dc839a500007405",
+    "reason": "Actual original main-menu Escape shutdown reaches this second missing CRT callback after verified005c1e2c at render618 in task-owned Chromium. File-backed .text entry immediately follows RET at005cae86; original termination table at005eb404 contains this pointer. Calls original005cb0d4, tests original CRT state and RET/jumps to005cdd6e. Preserve original shutdown rather than bypassing it."
+  },
+  {
+    "address": "005ca23c",
+    "bytes": "ff35443ba500ff15f8a05d00c3",
+    "reason": "Actual original main-menu Escape shutdown reaches this termination callback in both Chromium and WebKit at render667/658 after verified005cae87. Original file-backed .text entry follows RET005ca23b; original CRT termination table005eb410 contains this pointer. Pushes saved exception-filter pointer, calls original importedSetUnhandledExceptionFilter andRET. Preserve original exception-filter restoration and shutdown."
   }
 ]

@@ -14,7 +14,7 @@ const reader=createRangeReader(manifest,{layouts,cache,fetcher:async(url,options
   return response(options);
 }});
 const progress=[];await reader.preload(plan,p=>progress.push(p));
-assert.equal(requests.length,50);assert.equal(rejected,0);assert.equal(reader.stats.rateLimitRetries,0);
+assert.equal(requests.length,1);assert.equal(rejected,0);assert.equal(reader.stats.rateLimitRetries,0);
 for(const began of requests)assert.ok(requests.filter(time=>time>=began&&time<began+1000).length<=8,'Cold preparation admission rate');
 assert.equal(progress.at(-1).completed,progress.at(-1).total);
 assert.deepEqual(await reader.read('/data.dat',36865,7000),bytes.slice(36865,43865));reader.close();

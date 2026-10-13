@@ -8,6 +8,12 @@ export CARGO_HOME="$task_tools/rust/cargo"
 export RUSTUP_HOME="$task_tools/rust/rustup"
 export PATH="$CARGO_HOME/bin:$PATH"
 export CARGO_BUILD_JOBS=4
+# Compiler identity is part of the original-to-WASM reproducible build.
+expected_compiler=db8f076d2619ce2585b0380dda06e8da25a40da4
+if [[ $(rustc -Vv | sed -n 's/^commit-hash: //p') != "$expected_compiler" ]]; then
+  printf 'Unexpected original-game Rust compiler; use the verified 2026-10-03 nightly.\n' >&2
+  exit 2
+fi
 export CARGO_PROFILE_DEV_DEBUG=0
 profile=${JOEY_WASM_PROFILE:-dev}
 case "$profile" in dev|fast|release) ;; *) printf 'Unsupported build profile\n' >&2; exit 2;; esac
@@ -27,3 +33,10 @@ cargo build "${build_arguments[@]}"
 "$task_tools/wasm-tools/wasm-bindgen-0.2.121-x86_64-unknown-linux-musl/wasm-bindgen" \
   --out-dir "$binding_directory" --typescript --target web --reference-types \
   "target/wasm32-unknown-unknown/$artifact_directory/joey_original.wasm"
+python3 - "$binding_directory" "$profile" <<'PY'
+from pathlib import Path
+import hashlib,json,os,subprocess,sys
+directory=Path(sys.argv[1]);compiler=dict(line.split(': ',1) for line in subprocess.check_output(['rustc','-Vv'],text=True).splitlines() if ': ' in line)
+report={'rustc':compiler,'profile':sys.argv[2],'target':'wasm32-unknown-unknown','wasmBindgen':'0.2.121','rustFlags':os.environ['RUSTFLAGS'],'wasmSHA256':hashlib.sha256((directory/'joey_original_bg.wasm').read_bytes()).hexdigest()}
+(directory/'build-provenance.json').write_text(json.dumps(report,indent=2)+'\n')
+PY

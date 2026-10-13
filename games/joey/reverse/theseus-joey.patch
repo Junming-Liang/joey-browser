@@ -431,16 +431,29 @@ index 0abfa86..f6b9a69 100644
          use std::io::Write;
          std::io::stdout().write_all(text).unwrap();
 diff --git a/host/src/wasm.rs b/host/src/wasm.rs
-index 92da1ea..2c43923 100644
+index 92da1ea..7332fc1 100644
 --- a/host/src/wasm.rs
 +++ b/host/src/wasm.rs
-@@ -1,4 +1,4 @@
+@@ -1,31 +1,40 @@
 -use std::{arch::wasm32, sync::Mutex};
 +use std::arch::wasm32;
  
  use web_sys::wasm_bindgen::prelude::*;
  
-@@ -10,22 +10,14 @@ pub struct Surface {
+ use crate as host;
+ 
++/// Windows process termination stops every guest Worker, without turning the
++/// browser's normal exit into WebAssembly's unsupported process-exit trap.
++pub fn exit_process(code: u32) -> ! {
++    let exit = js_sys::Object::new();
++    js_sys::Reflect::set(&exit, &JsValue::from_str("__joeyProcessExit"), &JsValue::TRUE).unwrap();
++    js_sys::Reflect::set(&exit, &JsValue::from_str("exitCode"), &JsValue::from(code)).unwrap();
++    wasm_bindgen::throw_val(exit.into())
++}
++
+ pub struct Surface {
+     id: i32,
+ }
  
  impl Surface {
      pub fn new(width: u32, height: u32) -> Self {
@@ -462,10 +475,18 @@ index 92da1ea..2c43923 100644
 -            .unwrap()
 -            .set_pixels(self.id, pixels);
 +        host::host().chan.set_pixels(self.id, pixels);
++    }
++}
++
++impl Drop for Surface {
++    fn drop(&mut self) {
++        let args = js_sys::Array::new();
++        args.push(&JsValue::from(self.id));
++        host::host().chan.send_async("destroy_surface", args);
      }
  }
  
-@@ -35,11 +27,7 @@ pub struct Window {
+@@ -35,11 +44,7 @@ pub struct Window {
  
  impl Window {
      pub fn new(title: &str, width: u32, height: u32) -> Self {
@@ -478,7 +499,7 @@ index 92da1ea..2c43923 100644
          Window { id }
      }
  
-@@ -48,43 +36,55 @@ impl Window {
+@@ -48,43 +53,55 @@ impl Window {
      }
  
      pub fn resize(&mut self, width: u32, height: u32) {
@@ -554,7 +575,7 @@ index 92da1ea..2c43923 100644
  }
  
  impl Host {
-@@ -92,42 +92,116 @@ impl Host {
+@@ -92,42 +109,116 @@ impl Host {
          std::panic::set_hook(Box::new(console_error_panic_hook::hook));
  
          Host {
@@ -640,7 +661,7 @@ index 92da1ea..2c43923 100644
      pub fn persist_file(&self, path: &str, data: &[u8]) {
 -        self.chan.lock().unwrap().write_file(path, data);
 +        self.chan.write_file(path, data);
-+    }
+     }
 +
 +    pub fn read_external_file(
 +        &self,
@@ -649,7 +670,7 @@ index 92da1ea..2c43923 100644
 +        data: &mut [u8],
 +    ) -> std::io::Result<usize> {
 +        self.chan.read_file(path, offset, data)
-     }
++    }
 +
 +    pub fn spawn_thread(&self, task: impl FnOnce() + Send + 'static) -> std::io::Result<()> {
 +        // A thin pointer to an owned Send closure in shared WASM memory.
@@ -681,7 +702,7 @@ index 92da1ea..2c43923 100644
  }
  
  /// Add a file to the program's filesystem. The page calls this for each file
-@@ -137,6 +211,11 @@ pub fn mount_file(path: &str, data: &[u8]) {
+@@ -137,6 +228,11 @@ pub fn mount_file(path: &str, data: &[u8]) {
      crate::fs::mount(path, data.to_vec());
  }
  
@@ -693,15 +714,20 @@ index 92da1ea..2c43923 100644
  /// Set the directory the program starts in, the equivalent of launching it
  /// from that directory natively.
  #[wasm_bindgen]
-@@ -157,6 +236,7 @@ export interface Msg {
+@@ -157,9 +253,11 @@ export interface Msg {
  }
  
  export interface WasmHost {
+-    console_write(ptr: number, len: number): void;
 +    spawn_thread(task: number, module: WebAssembly.Module): number;
-     console_write(ptr: number, len: number): void;
++    console_write_bytes(bytes: Uint8Array): void;
  
      create_surface(width: number, height: number): number;
-@@ -168,6 +248,13 @@ export interface WasmHost {
++    destroy_surface(surface_id: number): void;
+ 
+     create_window(title: string, width: number, height: number): number;
+     resize_window(window_id: number, width: number, height: number): void;
+@@ -168,6 +266,13 @@ export interface WasmHost {
      set_pixels(surface_id: number, ptr: number, len: number): void;
  
      write_file(path: string, ptr: number, len: number): number;
@@ -715,16 +741,19 @@ index 92da1ea..2c43923 100644
  
      poll_message(): number[];
      wait_message(): Promise<number[]>;
-@@ -184,21 +271,21 @@ impl WebHostSendChannel {
+@@ -184,21 +289,21 @@ impl WebHostSendChannel {
          Self {}
      }
  
 -    pub fn console_write(&mut self, text: &[u8]) {
 +    pub fn console_write(&self, text: &[u8]) {
          let args = js_sys::Array::new();
-         args.push(&JsValue::from(text.as_ptr()));
-         args.push(&JsValue::from(text.len()));
-         self.send_async("console_write", args);
+-        args.push(&JsValue::from(text.as_ptr()));
+-        args.push(&JsValue::from(text.len()));
+-        self.send_async("console_write", args);
++        // The asynchronous RPC owns its bytes before the guest can reuse them.
++        args.push(&js_sys::Uint8Array::from(text));
++        self.send_async("console_write_bytes", args);
      }
  
 -    pub fn create_surface(&mut self, width: u32, height: u32) -> i32 {
@@ -740,7 +769,7 @@ index 92da1ea..2c43923 100644
          let args = js_sys::Array::new();
          args.push(&JsValue::from(title));
          args.push(&JsValue::from(width));
-@@ -206,7 +293,7 @@ impl WebHostSendChannel {
+@@ -206,7 +311,7 @@ impl WebHostSendChannel {
          self.send_sync("create_window", args)
      }
  
@@ -749,7 +778,7 @@ index 92da1ea..2c43923 100644
          let args = js_sys::Array::new();
          args.push(&JsValue::from(id));
          args.push(&JsValue::from(width));
-@@ -214,14 +301,14 @@ impl WebHostSendChannel {
+@@ -214,14 +319,14 @@ impl WebHostSendChannel {
          self.send_async("resize_window", args);
      }
  
@@ -766,7 +795,7 @@ index 92da1ea..2c43923 100644
          let args = js_sys::Array::new();
          args.push(&JsValue::from(path));
          args.push(&JsValue::from(data.as_ptr() as u32));
-@@ -229,7 +316,23 @@ impl WebHostSendChannel {
+@@ -229,7 +334,23 @@ impl WebHostSendChannel {
          self.send_sync("write_file", args);
      }
  
@@ -791,7 +820,7 @@ index 92da1ea..2c43923 100644
          let args = js_sys::Array::new();
          args.push(&JsValue::from(id));
          args.push(&JsValue::from(pixels.as_ptr() as u32));
-@@ -280,32 +383,35 @@ impl WebHostSendChannel {
+@@ -280,32 +401,35 @@ impl WebHostSendChannel {
          })
      }
  
@@ -1706,10 +1735,10 @@ index 2b76792..2bfb6fb 100644
                  #trace
              }
 diff --git a/win32/winapi/src/advapi32.rs b/win32/winapi/src/advapi32.rs
-index c8b11ff..e8bb497 100644
+index c8b11ff..818ca67 100644
 --- a/win32/winapi/src/advapi32.rs
 +++ b/win32/winapi/src/advapi32.rs
-@@ -1,14 +1,84 @@
+@@ -1,14 +1,102 @@
  use runtime::Context;
 +use std::{collections::{BTreeMap, HashMap}, sync::{LazyLock, Mutex}};
  
@@ -1721,7 +1750,7 @@ index c8b11ff..e8bb497 100644
 +const ERROR_INVALID_HANDLE: u32 = 6;
 +const ERROR_INVALID_PARAMETER: u32 = 87;
 +const ERROR_MORE_DATA: u32 = 234;
- 
++
 +#[derive(Clone)]
 +struct Value { kind: u32, bytes: Vec<u8> }
 +
@@ -1758,8 +1787,13 @@ index c8b11ff..e8bb497 100644
 +
 +static REGISTRY: LazyLock<Mutex<Registry>> = LazyLock::new(|| Mutex::new(Registry::default()));
 +
-+// minimal: registry contents survive during this worker only. Persist/restore
-+// the browser's own profile before accepting settings/save reload behavior.
++// The original collection is paired with this 13-byte registry value. Restore
++// only the game's key from the browser's own profile, never a host registry.
++const PROFILE_KEY_FILE: &str = "/joey-profile-key.bin";
++fn is_profile_key(path: &str, name: &str) -> bool {
++    name == "flcrc" && path.ends_with("\\software\\konami\\yu-gi-oh! power of chaos\\system")
++}
+ 
  #[win32_derive::dllexport]
 -pub fn RegCloseKey(_ctx: &mut Context, _hKey: HKEY) -> u32 /* WIN32_ERROR */ {
 -    stub!(0)
@@ -1785,8 +1819,21 @@ index c8b11ff..e8bb497 100644
 +    let mut registry = REGISTRY.lock().unwrap();
 +    let Some(path) = registry.path(hKey, "") else { return ERROR_INVALID_HANDLE; };
 +    let Some(values) = registry.keys.get_mut(&path) else { return ERROR_FILE_NOT_FOUND; };
-+    let bytes = ctx.memory.bytes[lpData as usize..][..cbData as usize].to_vec();
-+    values.insert(name, Value { kind: dwType, bytes }); 0
++    let mut bytes = ctx.memory.bytes[lpData as usize..][..cbData as usize].to_vec();
++    // Canonical ANSI registry: include an existing trailing NUL omitted from
++    // cbData for string types. The original CommonDir writer uses strlen.
++    if matches!(dwType,1|2|7) && !bytes.is_empty() && bytes.last()!=Some(&0)
++        && ctx.memory.bytes.get(lpData as usize+cbData as usize)==Some(&0) {
++        bytes.push(0);
++    }
++
++    values.insert(name.clone(), Value { kind: dwType, bytes: bytes.clone() });
++    drop(registry);
++    #[cfg(target_family = "wasm")]
++    if is_profile_key(&path, &name) && dwType == 3 && bytes.len() == 13 {
++        host::host().persist_file(PROFILE_KEY_FILE, &bytes);
++    }
++    0
 +}
 +
 +#[win32_derive::dllexport]
@@ -1796,7 +1843,7 @@ index c8b11ff..e8bb497 100644
  }
  
  #[win32_derive::dllexport]
-@@ -46,27 +116,45 @@ pub fn RegCreateKeyExW(
+@@ -46,27 +134,59 @@ pub fn RegCreateKeyExW(
  
  #[win32_derive::dllexport]
  pub fn RegOpenKeyExA(
@@ -1840,8 +1887,16 @@ index c8b11ff..e8bb497 100644
 -    stub!(ERROR_FILE_NOT_FOUND)
 +    if _lpReserved != 0 || (lpData != 0 && lpcbData == 0) { return ERROR_INVALID_PARAMETER; }
 +    let name = if lpValueName == 0 { String::new() } else { ctx.memory.read_str(lpValueName).to_ascii_lowercase() };
-+    let registry = REGISTRY.lock().unwrap();
++    let mut registry = REGISTRY.lock().unwrap();
 +    let Some(path) = registry.path(hKey, "") else { return ERROR_INVALID_HANDLE; };
++    #[cfg(target_family = "wasm")]
++    if is_profile_key(&path, &name) && !registry.keys.get(&path).is_some_and(|values| values.contains_key(&name)) {
++        if let Ok(bytes) = host::fs::read(PROFILE_KEY_FILE) {
++            assert_eq!(bytes.len(), 13, "Invalid browser collection registry key");
++            registry.create(&path);
++            registry.keys.get_mut(&path).unwrap().insert(name.clone(), Value { kind: 3, bytes });
++        }
++    }
 +    let Some(value) = registry.keys.get(&path).and_then(|values| values.get(&name)) else { return ERROR_FILE_NOT_FOUND; };
 +    if lpType != 0 { ctx.memory.write::<u32>(lpType, value.kind); }
 +    let capacity = if lpcbData == 0 { 0 } else { ctx.memory.read::<u32>(lpcbData) };
@@ -1849,12 +1904,18 @@ index c8b11ff..e8bb497 100644
 +    if lpData != 0 {
 +        if capacity < value.bytes.len() as u32 { return ERROR_MORE_DATA; }
 +        ctx.memory[lpData..][..value.bytes.len()].copy_from_slice(&value.bytes);
++        // A stored unterminated ANSI string gets a terminator only when the
++        // caller provided spare capacity; its reported stored length stays exact.
++        if matches!(value.kind,1|2|7) && !value.bytes.is_empty() && value.bytes.last()!=Some(&0)
++            && capacity as usize>value.bytes.len() {
++            ctx.memory.write::<u8>(lpData+value.bytes.len() as u32,0);
++        }
 +    }
 +    0
  }
  
  #[win32_derive::dllexport]
-@@ -94,3 +182,34 @@ pub fn RegSetValueExW(
+@@ -94,3 +214,57 @@ pub fn RegSetValueExW(
  ) -> u32 /* WIN32_ERROR */ {
      stub!(0)
  }
@@ -1888,9 +1949,32 @@ index c8b11ff..e8bb497 100644
 +        assert_eq!(ctx.memory.read::<u32>(0x1208), 4);
 +        assert_eq!(ctx.memory.read::<u32>(0x1220), 0x12345678);
 +    }
++    #[test]
++    fn registry_sz_termination_matches_native_reference() {
++        let mut ctx = Context {cpu:Default::default(),thread_handle:1,thread_id:1,
++            memory:runtime::Memory::leak_new(65536),blocks:&[],cache:Default::default(),recent:[Context::return_from_x86;4]};
++        let path=b"Software\\TheseusNativeStringProbe\0";
++        ctx.memory[0x1000..][..path.len()].copy_from_slice(path);
++        ctx.memory[0x1100..][..10].copy_from_slice(b"Synthetic\0");
++        assert_eq!(RegCreateKeyExA(&mut ctx,0x80000001,0x1000,0,0,0,0xf003f,0,0x1200,0x1204),0);
++        let key=ctx.memory.read::<u32>(0x1200);
++        let inputs:[&[u8];8]=[b"abc\0",b"abcZ\0",b"abc\0",b"abc\0",b"abc\0",b"abc\0\0",b"\0",b"abc\0"];
++        let kinds=[1,1,1,3,2,7,1,1];let sizes=[3,3,4,3,3,3,0,3];let capacities=[8,8,8,8,8,8,8,2];
++        for line in include_str!("registry_reference.txt").lines() {
++            let v=line.split_whitespace().skip(1).map(|s|u32::from_str_radix(s,16).unwrap()).collect::<Vec<_>>();let i=v[0] as usize;
++            ctx.memory[0x1300..][..inputs[i].len()].copy_from_slice(inputs[i]);ctx.memory[0x1400..][..8].fill(0xaa);
++            ctx.memory.write::<u32>(0x1208,0xaa);ctx.memory.write::<u32>(0x120c,capacities[i]);
++            assert_eq!(RegSetValueExA(&mut ctx,key,0x1100,0,kinds[i],0x1300,sizes[i]),v[1],"set {i}");
++            assert_eq!(RegQueryValueExA(&mut ctx,key,0x1100,0,0x1208,0x1400,0x120c),v[2],"query {i}");
++            assert_eq!(ctx.memory.read::<u32>(0x1208),v[3],"type {i}");assert_eq!(ctx.memory.read::<u32>(0x120c),v[4],"length {i}");
++            assert_eq!(&ctx.memory[0x1400..][..8],v[5..].iter().map(|b|*b as u8).collect::<Vec<_>>().as_slice(),"sentinels {i}");
++        }
++        assert_eq!(RegCloseKey(&mut ctx,key),0);
++    }
++
 +}
 diff --git a/win32/winapi/src/bitmap_format.rs b/win32/winapi/src/bitmap_format.rs
-index f937dca..6ae8cde 100644
+index f937dca..502f25d 100644
 --- a/win32/winapi/src/bitmap_format.rs
 +++ b/win32/winapi/src/bitmap_format.rs
 @@ -87,6 +87,8 @@ pub struct Bitmap {
@@ -2047,6 +2131,21 @@ index f937dca..6ae8cde 100644
              }
              8 => {
                  let src = &pixels[(y * self.stride()) as usize..];
+@@ -238,6 +301,14 @@ impl Bitmap {
+                     dst[dsti..][..4].copy_from_slice(&color.to_pixel());
+                 }
+             }
++            1 => {
++                let src = &pixels[(y * self.stride()) as usize..];
++                for (srci, dsti) in (x1..x2).zip((0..).step_by(4)) {
++                    // DIB palette indices are packed most-significant bit first.
++                    let index = (src[(srci / 8) as usize] >> (7 - srci % 8)) & 1;
++                    dst[dsti..][..4].copy_from_slice(&self.palette[index as usize].to_pixel());
++                }
++            }
+             _ => todo!("{}", self.bit_count),
+         }
+     }
 diff --git a/win32/winapi/src/ddraw/ddraw.rs b/win32/winapi/src/ddraw/ddraw.rs
 index 026e15f..b567fa9 100644
 --- a/win32/winapi/src/ddraw/ddraw.rs
@@ -2944,10 +3043,10 @@ index 6f4f73b..475be97 100644
      }
  }
 diff --git a/win32/winapi/src/gdi32/bitmap.rs b/win32/winapi/src/gdi32/bitmap.rs
-index f566875..b60237f 100644
+index f566875..1ae965c 100644
 --- a/win32/winapi/src/gdi32/bitmap.rs
 +++ b/win32/winapi/src/gdi32/bitmap.rs
-@@ -105,64 +105,257 @@ pub fn CreateCompatibleBitmap(ctx: &mut Context, _hdc: HDC, cx: i32, cy: i32) ->
+@@ -105,64 +105,325 @@ pub fn CreateCompatibleBitmap(ctx: &mut Context, _hdc: HDC, cx: i32, cy: i32) ->
          .process_heap
          .alloc(&mut ctx.memory, w * h * 4);
      let bitmap = Bitmap::new_simple(w, h, pixels);
@@ -3244,6 +3343,74 @@ index f566875..b60237f 100644
 +                expected_pixels,
 +                "reference pixels, case {index}"
 +            );
++        }
++        assert!(gdi32::lock().release_dc(dc));
++    }
++
++    #[test]
++    fn one_bit_dib_matches_reference_pixels_and_scan_counts() {
++        // Values captured from an independent native GDI probe, including
++        // odd source offsets, byte boundaries, row padding and clipped bands.
++        let cases = [
++            (3, 0, 0, 0, 0, 13, 3, 0, 3),
++            (-3, 0, 0, 0, 0, 13, 3, 0, 3),
++            (3, 0, 0, 1, 0, 12, 3, 0, 3),
++            (-3, 0, 0, 1, 0, 12, 3, 0, 3),
++            (3, 0, 0, 7, 0, 6, 3, 0, 3),
++            (-3, 0, 0, 8, 0, 5, 3, 0, 3),
++            (3, 0, 0, 9, 1, 4, 2, 0, 3),
++            (-3, 0, 0, 9, 1, 4, 2, 0, 3),
++            (3, -2, -1, 1, 0, 12, 3, 0, 3),
++            (-3, 14, 2, 7, 0, 6, 3, 0, 3),
++            (3, 0, 0, 0, 0, 13, 3, 1, 2),
++            (-3, 0, 0, 0, 0, 13, 3, 1, 2),
++            (3, 0, 0, 1, 1, 12, 2, 1, 2),
++            (-3, 0, 0, 1, 1, 12, 2, 1, 2),
++            (3, 0, 0, -1, 0, 14, 3, 0, 3),
++            (3, 0, 0, 0, 0, 13, 3, 3, 1),
++            (3, 0, 0, 0, 0, 13, 3, 0, 0),
++            (-3, 0, 0, 0, 0, 13, 3, 0, 5),
++        ];
++        let source = [
++            0xa5, 0xc8, 0xee, 0x11, 0x63, 0x57, 0xdd, 0x22, 0x96, 0xa3, 0xcc, 0x33,
++            0x0f, 0xf8, 0xbb, 0x44, 0xf0, 0x07, 0xaa, 0x55,
++        ];
++        let mut ctx = Context {
++            cpu: Default::default(),
++            thread_handle: 1,
++            thread_id: 1,
++            memory: runtime::Memory::leak_new(16384),
++            blocks: &[],
++            cache: Default::default(),
++            recent: [Context::return_from_x86; 4],
++        };
++        let mut bitmap = Bitmap::new_simple(16, 4, 0x1000);
++        bitmap.is_bgr = true;
++        let dc = gdi32::lock().new_memory_dc(bitmap);
++        ctx.memory[0x3000..][..source.len()].copy_from_slice(&source);
++        let records = include_str!("dib_1bpp_reference.txt").lines().collect::<Vec<_>>();
++        assert_eq!(records.len(), cases.len());
++        for (index, (&(height, dx, dy, sx, sy, w, h, start, lines), record)) in
++            cases.iter().zip(records).enumerate()
++        {
++            let fields = [
++                40, 13, height as u32, 1 | 1 << 16, 0, 12, 0, 0,
++                if index % 2 == 0 { 0 } else { 2 }, 0, 0x000c2238, 0x00f08024,
++            ];
++            for (i, field) in fields.iter().enumerate() {
++                ctx.memory.write::<u32>(0x2000 + i as u32 * 4, *field);
++            }
++            ctx.memory[0x1000..][..256].fill(0xaa);
++            let result = SetDIBitsToDevice(
++                &mut ctx, dc, dx, dy, w, h, sx, sy, start, lines,
++                Ptr::new(0x3000), Ptr::new(0x2000), 0,
++            );
++            let expected = record.split_whitespace().skip(1)
++                .map(|s| u32::from_str_radix(s, 16).unwrap()).collect::<Vec<_>>();
++            assert_eq!(expected[0], index as u32);
++            assert_eq!(result, expected[1], "reference return, case {index}");
++            let expected_pixels = expected[2..].iter().map(|n| *n as u8).collect::<Vec<_>>();
++            assert_eq!(&ctx.memory[0x1000..][..256], expected_pixels, "reference pixels, case {index}");
 +        }
 +        assert!(gdi32::lock().release_dc(dc));
 +    }
@@ -3828,7 +3995,7 @@ index 19a9439..335834d 100644
 +    }
 +}
 diff --git a/win32/winapi/src/kernel32/file.rs b/win32/winapi/src/kernel32/file.rs
-index e40e43b..069c13a 100644
+index e40e43b..35189ca 100644
 --- a/win32/winapi/src/kernel32/file.rs
 +++ b/win32/winapi/src/kernel32/file.rs
 @@ -4,7 +4,7 @@ use runtime::Context;
@@ -3879,6 +4046,80 @@ index e40e43b..069c13a 100644
  #[win32_derive::dllexport]
  pub fn GetFileType(_ctx: &mut Context, hFile: u32) -> u32 /* FILE_TYPE */ {
      let FILE_TYPE_DISK = 0x1;
+@@ -391,9 +416,24 @@ pub struct WIN32_FIND_DATAA {
+     _pad: [u8; 2],
+ }
+ 
+-fn find_data(entry: &FindEntry) -> WIN32_FIND_DATAA {
++fn find_data(entry: &FindEntry, code_page: u32) -> WIN32_FIND_DATAA {
+     let mut cFileName = [0u8; 260];
+-    let name = entry.name.as_bytes();
++    // FindFileA returns the guest ANSI code page, like CreateFileA consumes.
++    // UTF-8 names here cannot round-trip through the original CP936 program.
++    let name = if matches!(code_page, 932 | 936) {
++        let encode = if code_page == 936 { runtime::cp936::encode_char } else { runtime::cp932::encode_char };
++        let mut bytes = Vec::new();
++        for word in entry.name.encode_utf16() {
++            let value = encode(word, true).unwrap_or(b'?' as u16);
++            let width = if value > 255 { 2 } else { 1 };
++            if bytes.len() + width > 259 { break; }
++            if width == 2 { bytes.push((value >> 8) as u8); }
++            bytes.push(value as u8);
++        }
++        bytes
++    } else {
++        runtime::Memory::code_page_encoding(code_page).unwrap().encode(&entry.name).0.into_owned()
++    };
+     let len = name.len().min(259);
+     cFileName[..len].copy_from_slice(&name[..len]);
+     WIN32_FIND_DATAA {
+@@ -478,11 +518,15 @@ pub fn FindFirstFileA(
+         }
+     }
+     entries.sort_by(|a, b| a.name.cmp(&b.name));
++    if matches!(crate::trace::get_uncached(file!()), crate::trace::Trace::Before) {
++        log::debug!("FindFirstFileA pattern={pattern:?} directory={dir:?} entries={}", entries.len());
++    }
+     if entries.is_empty() {
+         return crate::HANDLE::invalid();
+     }
++    let data = find_data(&entries[0], ctx.memory.ansi_code_page);
+     lpFindFileData
+-        .write(&mut ctx.memory, find_data(&entries[0]))
++        .write(&mut ctx.memory, data)
+         .unwrap();
+     lock()
+         .objects
+@@ -503,7 +547,7 @@ pub fn FindNextFileA(
+     let Some(entry) = find.entries.get(find.index) else {
+         return false;
+     };
+-    let data = find_data(entry);
++    let data = find_data(entry, ctx.memory.ansi_code_page);
+     find.index += 1;
+     drop(kernel32);
+     lpFindFileData.write(&mut ctx.memory, data).unwrap();
+@@ -517,7 +561,19 @@ pub fn FindClose(_ctx: &mut Context, hFindFile: crate::HANDLE) -> bool {
+ 
+ #[cfg(test)]
+ mod tests {
+-    use super::wildcard_match;
++    use super::{wildcard_match, find_data, FindEntry};
++
++    #[test]
++    fn chinese_find_names_round_trip_and_never_split_a_character() {
++        let entry = FindEntry { name: "01 补血削血.dat".into(), size: 94, is_dir: false };
++        let data = find_data(&entry, 936);
++        let len = data.cFileName.iter().position(|b| *b == 0).unwrap();
++        assert_eq!(String::from_utf16_lossy(&runtime::cp936::decode(&data.cFileName[..len]).0), entry.name);
++        let long = FindEntry { name: "血".repeat(200), size: 0, is_dir: false };
++        let data = find_data(&long, 936);
++        assert_eq!(data.cFileName.iter().position(|b| *b == 0), Some(258));
++        assert!(!runtime::cp936::decode(&data.cFileName[..258]).1);
++    }
+ 
+     #[test]
+     fn wildcards() {
 diff --git a/win32/winapi/src/kernel32/misc.rs b/win32/winapi/src/kernel32/misc.rs
 index 0ae6d96..393c77e 100644
 --- a/win32/winapi/src/kernel32/misc.rs
@@ -4365,10 +4606,20 @@ index c96b4f7..96ceab6 100644
 -    todo!()
  }
 diff --git a/win32/winapi/src/kernel32/process.rs b/win32/winapi/src/kernel32/process.rs
-index 22fa7ae..3b8270d 100644
+index 22fa7ae..af7a72a 100644
 --- a/win32/winapi/src/kernel32/process.rs
 +++ b/win32/winapi/src/kernel32/process.rs
-@@ -73,6 +73,55 @@ pub fn GetCommandLineA(_ctx: &mut Context) -> u32 {
+@@ -9,6 +9,9 @@ use crate::{
+ 
+ #[win32_derive::dllexport]
+ pub fn ExitProcess(_ctx: &mut Context, uExitCode: u32) -> u32 {
++    #[cfg(target_family = "wasm")]
++    host::exit_process(uExitCode);
++    #[cfg(not(target_family = "wasm"))]
+     std::process::exit(uExitCode as i32);
+ }
+ 
+@@ -73,6 +76,55 @@ pub fn GetCommandLineA(_ctx: &mut Context) -> u32 {
      lock().command_line.command_line_8
  }
  
@@ -10131,10 +10382,10 @@ HcmV?d00001
 
 diff --git a/win32/winapi/src/gdi32/font.rs b/win32/winapi/src/gdi32/font.rs
 new file mode 100644
-index 0000000..7318999
+index 0000000..fd823c6
 --- /dev/null
 +++ b/win32/winapi/src/gdi32/font.rs
-@@ -0,0 +1,201 @@
+@@ -0,0 +1,205 @@
 +//! Glyphs captured through the canonical Wine GDI, not browser font substitution.
 +//! Original Songti requests use losslessly packed native coverage/metrics.
 +use std::sync::OnceLock;
@@ -10196,7 +10447,11 @@ index 0000000..7318999
 +    italic: u32, underline: u32, strikeout: u32, charset: u32, out_precision: u32, clip_precision: u32,
 +    quality: u32, pitch: u32, face: Ptr<u8>) -> HGDIOBJ {
 +    let name = if face.addr == 0 { &[][..] } else {ctx.memory.read_cstr(face.addr)};
-+    let profile=atlas().profiles.iter().position(|p| p.height==height && p.weight==weight && p.quality==quality);
++    // Native CreateFontA(14,300,2) selection highlight: all 21,887 glyphs,
++    // indices, cold/warm widths and metrics exactly match captured (14,400,2).
++    // Probe SHA256: aa960c3e1f56ec1a1e2293c8850b62dfe22c797bbfb04ca76fe20b9c3f386ed8.
++    let captured_weight=if (height,weight,quality)==(14,300,2) {400} else {weight};
++    let profile=atlas().profiles.iter().position(|p| p.height==height && p.weight==captured_weight && p.quality==quality);
 +    assert!(profile.is_some() && width==0 && escapement==0 && orientation==0 &&
 +        italic==0 && underline==0 && strikeout==0 && charset==1 && out_precision==0 && clip_precision==0 &&
 +        matches!(quality,2|3) && pitch==0 && name==[0xcb,0xce,0xcc,0xe5],
@@ -205228,3 +205483,41 @@ w<;aIgPz#FQu^c*~U+5DT)X`MHF6f$nlq|9mI-_g86^J#}gLt`wL-p_f0o_78XaE2J
 literal 0
 HcmV?d00001
 
+diff --git a/win32/winapi/src/registry_reference.txt b/win32/winapi/src/registry_reference.txt
+new file mode 100644
+index 0000000..d339742
+--- /dev/null
++++ b/win32/winapi/src/registry_reference.txt
+@@ -0,0 +1,8 @@
++R 00000000 00000000 00000000 00000001 00000004 00000061 00000062 00000063 00000000 000000aa 000000aa 000000aa 000000aa
++R 00000001 00000000 00000000 00000001 00000003 00000061 00000062 00000063 00000000 000000aa 000000aa 000000aa 000000aa
++R 00000002 00000000 00000000 00000001 00000004 00000061 00000062 00000063 00000000 000000aa 000000aa 000000aa 000000aa
++R 00000003 00000000 00000000 00000003 00000003 00000061 00000062 00000063 000000aa 000000aa 000000aa 000000aa 000000aa
++R 00000004 00000000 00000000 00000002 00000004 00000061 00000062 00000063 00000000 000000aa 000000aa 000000aa 000000aa
++R 00000005 00000000 00000000 00000007 00000004 00000061 00000062 00000063 00000000 000000aa 000000aa 000000aa 000000aa
++R 00000006 00000000 00000000 00000001 00000000 000000aa 000000aa 000000aa 000000aa 000000aa 000000aa 000000aa 000000aa
++R 00000007 00000000 000000ea 00000001 00000004 000000aa 000000aa 000000aa 000000aa 000000aa 000000aa 000000aa 000000aa
+diff --git a/win32/winapi/src/gdi32/dib_1bpp_reference.txt b/win32/winapi/src/gdi32/dib_1bpp_reference.txt
+new file mode 100644
+index 0000000..4751972
+--- /dev/null
++++ b/win32/winapi/src/gdi32/dib_1bpp_reference.txt
+@@ -0,0 +1,18 @@
++M 00000000 00000003 24 80 f0 00 38 22 0c 00 38 22 0c 00 24 80 f0 00 38 22 0c 00 24 80 f0 00 24 80 f0 00 38 22 0c 00 24 80 f0 00 38 22 0c 00 24 80 f0 00 38 22 0c 00 38 22 0c 00 aa aa aa aa aa aa aa aa aa aa aa aa 38 22 0c 00 24 80 f0 00 24 80 f0 00 38 22 0c 00 38 22 0c 00 38 22 0c 00 24 80 f0 00 24 80 f0 00 38 22 0c 00 24 80 f0 00 38 22 0c 00 24 80 f0 00 38 22 0c 00 aa aa aa aa aa aa aa aa aa aa aa aa 24 80 f0 00 38 22 0c 00 24 80 f0 00 38 22 0c 00 38 22 0c 00 24 80 f0 00 38 22 0c 00 24 80 f0 00 24 80 f0 00 24 80 f0 00 38 22 0c 00 38 22 0c 00 24 80 f0 00 aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa
++M 00000001 00000003 24 80 f0 00 38 22 0c 00 24 80 f0 00 38 22 0c 00 38 22 0c 00 24 80 f0 00 38 22 0c 00 24 80 f0 00 24 80 f0 00 24 80 f0 00 38 22 0c 00 38 22 0c 00 24 80 f0 00 aa aa aa aa aa aa aa aa aa aa aa aa 38 22 0c 00 24 80 f0 00 24 80 f0 00 38 22 0c 00 38 22 0c 00 38 22 0c 00 24 80 f0 00 24 80 f0 00 38 22 0c 00 24 80 f0 00 38 22 0c 00 24 80 f0 00 38 22 0c 00 aa aa aa aa aa aa aa aa aa aa aa aa 24 80 f0 00 38 22 0c 00 38 22 0c 00 24 80 f0 00 38 22 0c 00 24 80 f0 00 24 80 f0 00 38 22 0c 00 24 80 f0 00 38 22 0c 00 24 80 f0 00 38 22 0c 00 38 22 0c 00 aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa
++M 00000002 00000003 38 22 0c 00 38 22 0c 00 24 80 f0 00 38 22 0c 00 24 80 f0 00 24 80 f0 00 38 22 0c 00 24 80 f0 00 38 22 0c 00 24 80 f0 00 38 22 0c 00 38 22 0c 00 aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa 24 80 f0 00 24 80 f0 00 38 22 0c 00 38 22 0c 00 38 22 0c 00 24 80 f0 00 24 80 f0 00 38 22 0c 00 24 80 f0 00 38 22 0c 00 24 80 f0 00 38 22 0c 00 aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa 38 22 0c 00 24 80 f0 00 38 22 0c 00 38 22 0c 00 24 80 f0 00 38 22 0c 00 24 80 f0 00 24 80 f0 00 24 80 f0 00 38 22 0c 00 38 22 0c 00 24 80 f0 00 aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa
++M 00000003 00000003 38 22 0c 00 24 80 f0 00 38 22 0c 00 38 22 0c 00 24 80 f0 00 38 22 0c 00 24 80 f0 00 24 80 f0 00 24 80 f0 00 38 22 0c 00 38 22 0c 00 24 80 f0 00 aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa 24 80 f0 00 24 80 f0 00 38 22 0c 00 38 22 0c 00 38 22 0c 00 24 80 f0 00 24 80 f0 00 38 22 0c 00 24 80 f0 00 38 22 0c 00 24 80 f0 00 38 22 0c 00 aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa 38 22 0c 00 38 22 0c 00 24 80 f0 00 38 22 0c 00 24 80 f0 00 24 80 f0 00 38 22 0c 00 24 80 f0 00 38 22 0c 00 24 80 f0 00 38 22 0c 00 38 22 0c 00 aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa
++M 00000004 00000003 38 22 0c 00 24 80 f0 00 38 22 0c 00 24 80 f0 00 38 22 0c 00 38 22 0c 00 aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa 24 80 f0 00 38 22 0c 00 24 80 f0 00 38 22 0c 00 24 80 f0 00 38 22 0c 00 aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa 24 80 f0 00 24 80 f0 00 24 80 f0 00 38 22 0c 00 38 22 0c 00 24 80 f0 00 aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa
++M 00000005 00000003 24 80 f0 00 24 80 f0 00 38 22 0c 00 38 22 0c 00 24 80 f0 00 aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa 38 22 0c 00 24 80 f0 00 38 22 0c 00 24 80 f0 00 38 22 0c 00 aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa 24 80 f0 00 38 22 0c 00 24 80 f0 00 38 22 0c 00 38 22 0c 00 aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa
++M 00000006 00000003 38 22 0c 00 24 80 f0 00 38 22 0c 00 38 22 0c 00 aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa 24 80 f0 00 38 22 0c 00 24 80 f0 00 38 22 0c 00 aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa
++M 00000007 00000003 24 80 f0 00 38 22 0c 00 38 22 0c 00 24 80 f0 00 aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa 24 80 f0 00 38 22 0c 00 24 80 f0 00 38 22 0c 00 aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa
++M 00000008 00000003 38 22 0c 00 38 22 0c 00 38 22 0c 00 24 80 f0 00 24 80 f0 00 38 22 0c 00 24 80 f0 00 38 22 0c 00 24 80 f0 00 38 22 0c 00 aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa 38 22 0c 00 38 22 0c 00 24 80 f0 00 38 22 0c 00 24 80 f0 00 24 80 f0 00 24 80 f0 00 38 22 0c 00 38 22 0c 00 24 80 f0 00 aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa
++M 00000009 00000003 aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa 24 80 f0 00 24 80 f0 00 aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa 24 80 f0 00 38 22 0c 00
++M 0000000a 00000002 38 22 0c 00 24 80 f0 00 24 80 f0 00 38 22 0c 00 38 22 0c 00 38 22 0c 00 24 80 f0 00 24 80 f0 00 38 22 0c 00 24 80 f0 00 38 22 0c 00 24 80 f0 00 38 22 0c 00 aa aa aa aa aa aa aa aa aa aa aa aa 24 80 f0 00 38 22 0c 00 24 80 f0 00 38 22 0c 00 38 22 0c 00 24 80 f0 00 38 22 0c 00 24 80 f0 00 24 80 f0 00 24 80 f0 00 38 22 0c 00 38 22 0c 00 24 80 f0 00 aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa
++M 0000000b 00000002 24 80 f0 00 38 22 0c 00 24 80 f0 00 38 22 0c 00 38 22 0c 00 24 80 f0 00 38 22 0c 00 24 80 f0 00 24 80 f0 00 24 80 f0 00 38 22 0c 00 38 22 0c 00 24 80 f0 00 aa aa aa aa aa aa aa aa aa aa aa aa 38 22 0c 00 24 80 f0 00 24 80 f0 00 38 22 0c 00 38 22 0c 00 38 22 0c 00 24 80 f0 00 24 80 f0 00 38 22 0c 00 24 80 f0 00 38 22 0c 00 24 80 f0 00 38 22 0c 00 aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa
++M 0000000c 00000002 24 80 f0 00 24 80 f0 00 38 22 0c 00 38 22 0c 00 38 22 0c 00 24 80 f0 00 24 80 f0 00 38 22 0c 00 24 80 f0 00 38 22 0c 00 24 80 f0 00 38 22 0c 00 aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa 38 22 0c 00 24 80 f0 00 38 22 0c 00 38 22 0c 00 24 80 f0 00 38 22 0c 00 24 80 f0 00 24 80 f0 00 24 80 f0 00 38 22 0c 00 38 22 0c 00 24 80 f0 00 aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa
++M 0000000d 00000002 38 22 0c 00 24 80 f0 00 38 22 0c 00 38 22 0c 00 24 80 f0 00 38 22 0c 00 24 80 f0 00 24 80 f0 00 24 80 f0 00 38 22 0c 00 38 22 0c 00 24 80 f0 00 aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa 24 80 f0 00 24 80 f0 00 38 22 0c 00 38 22 0c 00 38 22 0c 00 24 80 f0 00 24 80 f0 00 38 22 0c 00 24 80 f0 00 38 22 0c 00 24 80 f0 00 38 22 0c 00 aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa
++M 0000000e 00000003 aa aa aa aa 24 80 f0 00 38 22 0c 00 38 22 0c 00 24 80 f0 00 38 22 0c 00 24 80 f0 00 24 80 f0 00 38 22 0c 00 24 80 f0 00 38 22 0c 00 24 80 f0 00 38 22 0c 00 38 22 0c 00 aa aa aa aa aa aa aa aa aa aa aa aa 38 22 0c 00 24 80 f0 00 24 80 f0 00 38 22 0c 00 38 22 0c 00 38 22 0c 00 24 80 f0 00 24 80 f0 00 38 22 0c 00 24 80 f0 00 38 22 0c 00 24 80 f0 00 38 22 0c 00 aa aa aa aa aa aa aa aa aa aa aa aa 24 80 f0 00 38 22 0c 00 24 80 f0 00 38 22 0c 00 38 22 0c 00 24 80 f0 00 38 22 0c 00 24 80 f0 00 24 80 f0 00 24 80 f0 00 38 22 0c 00 38 22 0c 00 24 80 f0 00 aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa
++M 0000000f 00000000 aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa
++M 00000010 00000000 aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa
++M 00000011 00000005 24 80 f0 00 38 22 0c 00 38 22 0c 00 24 80 f0 00 38 22 0c 00 24 80 f0 00 24 80 f0 00 38 22 0c 00 24 80 f0 00 38 22 0c 00 24 80 f0 00 38 22 0c 00 38 22 0c 00 aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa
