@@ -4,13 +4,21 @@ import {createOriginalAudioHost} from './pcm-audio-host.mjs';
 import {createOriginalResourceCache} from './resource-cache.mjs';
 import {archiveLayouts,preloadAssets} from './resource-layout.mjs';
 
+export function requireOriginalBrowserSupport(){
+ const environment={secureContext:isSecureContext,isolated:crossOriginIsolated,sharedMemory:typeof SharedArrayBuffer==='function',browser:navigator.userAgent};
+ if(!environment.secureContext)throw Error('当前页面未获得安全连接，无法启动原版程序；请通过 HTTPS 网址打开游戏');
+ if(!environment.isolated||!environment.sharedMemory){
+  const browser=/Android/i.test(environment.browser)?'Chrome':/iPhone|iPad|iPod/i.test(environment.browser)?'Safari':'Chrome、Firefox 或 Safari';
+  throw Error('当前浏览器未开放原版游戏所需的共享内存。请复制网址到独立的 '+browser+' 浏览器打开；若从其他应用进入，可在应用菜单中选择“在浏览器中打开”。');
+ }
+ return environment;
+}
+
 export function createOriginalBrowserHost({manifest,program,packedResources,legacyPackedResources=[],preloadMode='common',baseURL=new URL('./',import.meta.url),container=document.body,onStatus=()=>{},traceSpec='',claimProfile=async()=>{},loadFiles=async()=>[],saveFile=async()=>{}}){
 if(!['common','complete'].includes(preloadMode))throw Error('Invalid original resource preparation mode');
 const probe = {stages: [], threads:[], calls: [], console: '', renders: 0, writes: [], windows: [], inputQueued:0,inputConsumed:0, launchArguments: ['-win','-e']};
-probe.environment={secureContext:isSecureContext,isolated:crossOriginIsolated,sharedMemory:typeof SharedArrayBuffer==='function',browser:navigator.userAgent};
+probe.environment=requireOriginalBrowserSupport();
 probe.programSource=program;
-if(!probe.environment.secureContext)throw Error('当前页面未获得安全连接，无法启动原版程序');
-if(!probe.environment.isolated||!probe.environment.sharedMemory)throw Error('当前 Safari 页面未启用原版程序所需的共享内存');
 probe.audio = {};
 probe.resourceCache={};const resourceCache=createOriginalResourceCache(probe.resourceCache);
 const reader = createOriginalResourceReader(manifest,{cache:resourceCache,layouts:archiveLayouts,packedResources,legacyPackedResources});

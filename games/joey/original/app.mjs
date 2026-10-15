@@ -78,7 +78,8 @@ async function prepare(session){
     element('download-size').textContent='横屏后点击启动。首次启动预计下载约 '+megabytes+' MB 的程序和常用资源（压缩传输）；未缓存内容后续按需下载，下载中断后重新打开页面会从已保存的部分续传；再次启动复用本机缓存。游戏声音会在启动后开启。';
   }
   try{
-    const [{createOriginalBrowserHost},{openPlayerFiles},patch,{collectionCatalog}]=await Promise.all([import('./browser-host.mjs'),import('./player-files.mjs'),import('./collection-patch.mjs'),import('./collection-catalog.mjs')]);
+    const [{createOriginalBrowserHost,requireOriginalBrowserSupport},{openPlayerFiles},patch,{collectionCatalog}]=await Promise.all([import('./browser-host.mjs'),import('./player-files.mjs'),import('./collection-patch.mjs'),import('./collection-catalog.mjs')]);
+    requireOriginalBrowserSupport();
     Host=createOriginalBrowserHost;profile=await openPlayerFiles();
     collection=patch;catalog=collectionCatalog;
     try{element('unlock-cards').checked=localStorage.getItem('joey-original-unlock-cards')!=='off';}catch{}
@@ -88,7 +89,7 @@ async function prepare(session){
     catch(error){element('collection-status').textContent=error.message+'；可恢复此前的备份。';}
     element('start').textContent='启动原版游戏';element('start').disabled=false;
     element('restore-collection').disabled=false;element('restore-deck').disabled=false;
-  }catch(error){status({stage:'host-failed',startupPhase:'creating-host',error:String(error),stack:error.stack});console.error(error);return;}
+  }catch(error){element('start').textContent='当前环境无法启动';status({stage:'host-failed',startupPhase:'creating-host',error:String(error),stack:error.stack});console.error(error);return;}
   element('start').onclick=()=>{
     launchStarted=performance.now();element('copy-error').hidden=false;element('startup-details').hidden=false;
     startupTimer=setInterval(updateStartupProgress,1000);

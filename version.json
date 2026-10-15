@@ -1,7 +1,7 @@
 {
   "version": "0.2.1",
   "tag": "v0.2.1",
-  "runtimeVersion": "20261015-121836-df1d7703",
+  "runtimeVersion": "20261015-131102-786bb37f",
   "wasmSHA256": "9b3d37007d31af4db92674061306ba7a57c2d848a5aab964a8736b6fbf13481e",
   "wasmBytes": 83795927,
   "programGzipSHA256": "e34d1da1cc7105c4b5327831d74da7451a1bced43366adba261965236bc2640d",
@@ -118,12 +118,12 @@
     "wasmSHA256": "9b3d37007d31af4db92674061306ba7a57c2d848a5aab964a8736b6fbf13481e"
   },
   "runtimeSources": {
-    "games/joey/original/app.mjs": "6a4a5cd479a253092cf036f06a981cd3da128fe564d0ad03e7a40ed0bb2b4621",
+    "games/joey/original/app.mjs": "110727f6e6ed5dd6aaf9b3d45228ebd1474d0271bc83823b7118b46ae292693f",
     "games/joey/reverse/brotli-block-decoder.mjs": "bfdea6e706b70c32f02f9f98482478e71eb4be8809a1dd489fdecae4f6f8d722",
     "games/joey/reverse/brotli-decoder-worker.mjs": "9314cbb78fa4c18a7b3139aec957a860cc28057fe83f6ea405e134b8936f65e0",
     "games/joey/reverse/brotli-decoder.mjs": "19cf5d13fa62df4ebdf3fcefddeefa54b41fd7cca83be2b553dd5a1e9c81b2d0",
     "games/joey/reverse/brotli-decoder.wasm": "609f39231686f9feb0fcc68a18d32067423d64f40690c75652c21934ec370909",
-    "games/joey/original/browser-host.mjs": "e18a01e8faabf04cfc3e0479db7c336f7374015cec2516c98da28449125ea0fd",
+    "games/joey/original/browser-host.mjs": "5e0e5f9354c770da6c74e86eca81cf1147fabeae067cd174da7e494acceac6f3",
     "games/joey/original/collection-catalog.mjs": "573ae90749df106c26c3dffb05dbcbf6064920e11635e34521b504f36ac0e1ae",
     "games/joey/original/collection-patch.mjs": "69105ad7556d605d7d59e0f32688db6b8ee1d2e0f20c7e883e66530203c2fc99",
     "games/joey/original/index.html": "7f73d1efac256bd304a73118c63ff9daa47ea5a1749851d0e9220738bd62462d",

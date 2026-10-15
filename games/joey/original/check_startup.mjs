@@ -36,16 +36,17 @@ try{
   try{
    for(const variant of [{isolated:true},{isolated:false},...(cacheCheck?[{isolated:true,cacheUnavailable:true}]:[])]){
     const {isolated,cacheUnavailable}=variant,caseTag=cacheUnavailable?'cache-unavailable':String(isolated);
-    const context=await browser.newContext({viewport,hasTouch:true,isMobile:true});
-
-    if(!isolated)await context.addInitScript(()=>Object.defineProperty(globalThis,'crossOriginIsolated',{value:false}));
+    const context=await browser.newContext({viewport,hasTouch:true,isMobile:true,...(!isolated?{userAgent:'Mozilla/5.0 (Linux; Android 15; NX733J Build/AQ3A.240812.002; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/154.0.8037.57 Mobile Safari/537.36'}:{})});
+    if(!isolated)await context.addInitScript(()=>{Object.defineProperty(globalThis,'crossOriginIsolated',{value:false});Object.defineProperty(globalThis,'SharedArrayBuffer',{value:undefined});});
     const page=await context.newPage(),errors=[];page.on('pageerror',error=>errors.push(String(error)));const failureResponses=[];
+    const gameDownloads=[];page.on('request',request=>{if(/\/(?:program-bytes|joey_original_bg\.wasm|resource-bytes\/|resources\/|resource-packs\/)/.test(request.url()))gameDownloads.push(request.url());});
     if(isolated&&initialWasmPath)await page.route('**/joey_original_bg.wasm',route=>route.fulfill({path:initialWasmPath,contentType:'application/wasm'}));
     let releaseResource;
     if(isolated&&delayResource){let held=false;const gate=new Promise(done=>releaseResource=done);await page.route('**/{resources,resource-bytes}/**',async route=>{if(!held){held=true;await gate;}await route.continue();});}
     page.on('response',response=>{if(response.url().endsWith('/api/failure'))failureResponses.push(response.status());});
     try{
-     await page.goto(prefix,{waitUntil:'networkidle'});await page.waitForFunction(()=>!document.getElementById('start').disabled);if(cacheUnavailable)await page.evaluate(disableResourceStorage);const recorded=isolated?null:page.waitForResponse(response=>response.url().endsWith('/api/failure'));await page.locator('#start').tap();
+     const recorded=isolated?null:page.waitForResponse(response=>response.url().endsWith('/api/failure'));
+     await page.goto(prefix,{waitUntil:'domcontentloaded'});await page.waitForFunction(()=>!document.getElementById('start').disabled||!document.getElementById('failure-details').hidden);if(cacheUnavailable)await page.evaluate(disableResourceStorage);if(isolated)await page.locator('#start').tap();
      if(isolated&&delayResource){
       await page.waitForFunction(()=>window.joeyOriginal?.resourceStats.activeRequests>0&&(document.getElementById('status').textContent.includes('已准备')||document.getElementById('status').textContent.includes('已读取')),null,{timeout:120000});
       await page.locator('#startup-details summary').click();
@@ -62,7 +63,7 @@ try{
      await page.waitForFunction(()=>window.joeyOriginal?.renders>=4||!document.getElementById('failure-details').hidden,null,{timeout:120000});
      const report=await page.evaluate(()=>({probe:window.joeyOriginal,status:document.getElementById('status').textContent,failure:document.getElementById('failure-report').textContent,detailsHidden:document.getElementById('failure-details').hidden,copyHidden:document.getElementById('copy-error').hidden}));
      if(isolated){assert(report.probe?.renders>=4,'Original first picture: '+JSON.stringify(report));assert(report.detailsHidden,'Normal startup must not show failure');assert(report.probe.audio.contextState==='running','Audio started by gesture');assert(report.probe.programProgress.received===report.probe.programProgress.total&&report.probe.programProgress.total>0,'Program progress must count all decompressed bytes');const box=await page.locator('canvas').boundingBox();assert(box?.width>0&&box?.height>0,'Original canvas must have visible dimensions');}
-     else{assert(report.status.includes('共享内存'),'Missing isolation diagnostic');assert(!report.copyHidden&&!report.detailsHidden,'Copy and visible failure details');const details=JSON.parse(report.failure);assert(details.environment.isolated===false&&details.failure.startupPhase==='creating-host','Exact failing capability and phase');await recorded;assert(failureResponses.includes(200),'Public failure was recorded');}
+     else{assert(report.status.includes('共享内存')&&report.status.includes('Chrome')&&!report.status.includes('Safari'),'Android WebView receives an accurate browser-opening instruction');assert(!report.copyHidden&&!report.detailsHidden,'Copy and visible failure details');assert(await page.locator('#start').isDisabled(),'Unsupported environment must be detected before start');assert(!report.probe&&gameDownloads.length===0,'Unsupported environment must not start the runtime or download game data');const details=JSON.parse(report.failure);assert(details.environment.isolated===false&&details.environment.sharedMemory===false&&details.failure.startupPhase==='creating-host','Exact failing capability and phase');await recorded;assert(failureResponses.includes(200),'Public failure was recorded');}
      assert(errors.length===0,'Page errors: '+errors.join(';'));
      const record={browser:name,isolated,version:revision.version,wasmSHA256:isolated&&initialWasmSHA256||revision.wasmSHA256,...report,errors,failureResponses};reports.push(record);
      await page.screenshot({path:resolve(evidence,name+'-'+caseTag+'.png')});await writeFile(resolve(evidence,name+'-'+caseTag+'.json'),JSON.stringify(record,null,2)+'\n');
