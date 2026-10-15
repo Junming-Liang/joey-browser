@@ -49,6 +49,7 @@ function fitCanvas(){const canvas=surface.querySelector('canvas');if(!canvas)ret
 new ResizeObserver(fitCanvas).observe(surface);new MutationObserver(fitCanvas).observe(surface,{childList:true});
 function status(data){
   if(['failed','host-failed','worker-error'].includes(data.stage)){
+    document.body.classList.remove('playing');
     lastFailure=data;clearInterval(startupTimer);element('loading').hidden=true;element('startup-details').hidden=true;element('copy-error').hidden=false;element('copy-error').textContent='复制错误信息';
     const phase=startupLabels[data.startupPhase]||(host?.probe.renders?'运行游戏':'启动游戏');
     element('status').textContent=phase+'失败：'+String(data.error).slice(0,600)+'。可复制错误信息反馈。';
@@ -56,7 +57,8 @@ function status(data){
     for(const button of document.querySelectorAll('[data-key],#right-click,#keyboard,#sound'))button.disabled=true;
     const report=failureReport();
     fetch(new URL('api/failure',base),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({browser:report.browser,stage:data.stage,startupPhase:data.startupPhase,error:String(data.error).slice(0,2000),errorName:data.errorName,renders:report.renders||0,...report.environment})}).catch(()=>{});
-  }else if(data.stage==='first-frame'||startupLabels[data.stage])updateStartupProgress();
+  }else if(data.stage==='first-frame'){document.body.classList.add('playing');updateStartupProgress();}
+  else if(startupLabels[data.stage])updateStartupProgress();
   else if(data.stage==='returned'){clearInterval(startupTimer);element('loading').hidden=true;element('status').textContent='游戏已退出，刷新页面可重新进入。';for(const button of document.querySelectorAll('[data-key],#right-click,#keyboard,#sound'))button.disabled=true;}
 }
 async function prepare(session){

@@ -3,7 +3,7 @@
 **在浏览器中运行《游戏王：混沌力量 · 城之内篇》的原版程序。**
 
 [![Source checks](https://github.com/Junming-Liang/joey-browser/actions/workflows/checks.yml/badge.svg?branch=main)](https://github.com/Junming-Liang/joey-browser/actions/workflows/checks.yml)
-[![Version](https://img.shields.io/badge/version-0.2.0-blue)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-0.2.1-blue)](CHANGELOG.md)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Node.js](https://img.shields.io/badge/Node.js-%E2%89%A522-339933)](docs/BUILD.md)
 [![Status](https://img.shields.io/badge/status-compatibility%20preview-orange)](docs/VERIFICATION.md)
@@ -12,7 +12,7 @@
 
 Joey Browser 将固定版本的原程序静态转换为 WebAssembly，在浏览器里执行原有界面、规则和 AI。Canvas 显示原版画面，Web Audio 播放原版混音，服务器提供程序和资源字节。手机与电脑使用同一套运行层。
 
-仓库提供网页运行层、Win32 兼容补丁、资源压缩工具和验证脚本。[完整部署附件](https://github.com/Junming-Liang/joey-browser/releases/download/v0.2.0/joey-browser-v0.2.0-complete.tar.gz) 包含原版 EXE、完整资源字节和预编译浏览器程序，可直接安装；Git 源码保持独立。游戏内容与 MIT 自有代码的许可边界见 [内容声明](GAME-CONTENT-NOTICE.md)。
+仓库提供网页运行层、Win32 兼容补丁、资源压缩工具和验证脚本。[完整部署附件](https://github.com/Junming-Liang/joey-browser/releases/download/v0.2.1/joey-browser-v0.2.1-complete.tar.gz) 包含原版 EXE、完整资源字节和预编译浏览器程序，可直接安装；Git 源码保持独立。游戏内容与 MIT 自有代码的许可边界见 [内容声明](GAME-CONTENT-NOTICE.md)。
 
 ## 目录
 
@@ -56,12 +56,12 @@ Joey Browser 将固定版本的原程序静态转换为 WebAssembly，在浏览�
 
 ### 直接部署
 
-在 [v0.2.0 Release](https://github.com/Junming-Liang/joey-browser/releases/tag/v0.2.0) 下载完整部署包及其 `.sha256` 校验文件。目标服务器仅需 Node.js 22 及以上：
+在 [v0.2.1 Release](https://github.com/Junming-Liang/joey-browser/releases/tag/v0.2.1) 下载完整部署包及其 `.sha256` 校验文件。目标服务器仅需 Node.js 22 及以上：
 
 ```sh
-sha256sum -c joey-browser-v0.2.0-complete.tar.gz.sha256
-tar -xzf joey-browser-v0.2.0-complete.tar.gz
-cd joey-browser-v0.2.0-local
+sha256sum -c joey-browser-v0.2.1-complete.tar.gz.sha256
+tar -xzf joey-browser-v0.2.1-complete.tar.gz
+cd joey-browser-v0.2.1-local
 node site/setup-deployment.mjs --origin https://game.example.com
 JOEY_ORIGINAL_CONFIG="$PWD/config.local.json" \
   node --max-old-space-size=64 site/server.mjs
@@ -182,7 +182,7 @@ npm run test:game
 
 ## 当前状态
 
-`v0.2.0` 对应运行版本 **`20261013-105914-175e2127`**，目前作为兼容性预览维护。
+`v0.2.1` 对应运行版本 **`20261015-121836-df1d7703`**，目前作为兼容性预览维护。
 
 已在 Chromium 和 WebKit 中验证完整资源的 458 个块、实际下载中断后的续传、旧缓存兼容、质量选择隔离、错误解码与取消、存档保持，以及卡组界面中的持续音乐播放。公网 HTTPS 上的两档资源读取和程序启动也已验证。
 

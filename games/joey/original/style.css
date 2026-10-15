@@ -5,3 +5,18 @@
 #launch label{font-size:12px;line-height:1.5}#complete-resources{display:inline-block;width:auto;margin:0 5px 0 0;padding:0;vertical-align:middle}
 #unlock-cards{display:inline-block;width:auto;margin:0 5px 0 0;padding:0;vertical-align:middle}#collection-options{font-size:12px;margin:8px 0}#collection-options button{width:auto;margin:4px 5px 0 0;padding:6px 10px}#collection-options p{margin:6px 0}#preset-deck{width:100%;padding:8px;background:#202020;color:#fff;border:1px solid #555;border-radius:6px}#launch{overflow:auto}
 #keyboard-input{position:fixed;left:0;bottom:0;width:1px;height:1px;padding:0;margin:0;border:0;opacity:0;font-size:16px;pointer-events:none}
+
+#game-tools{display:flex;flex-direction:column;flex:none;min-height:0}
+#game-surface{min-width:0}
+@media(orientation:landscape) and (max-height:600px){
+  body.playing>header{display:none}
+  body.playing #game{flex-direction:row}
+  body.playing #game-tools{flex:0 0 clamp(116px,17vw,148px);overflow-y:auto;overscroll-behavior:contain;padding:3px}
+  body.playing #controls{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:4px;padding:3px 0}
+  body.playing #controls button{min-width:0;padding:6px 3px;font-size:12px}
+  body.playing #fullscreen{grid-column:1/-1}
+  body.playing #status{margin:2px;font-size:10px}
+  body.playing #copy-error{padding:5px 8px;font-size:12px;max-width:100%}
+  body.playing #startup-details,body.playing #failure-details{margin:3px;font-size:11px}
+  body.playing #loading{width:100%;margin:3px 0;font-size:10px}
+}

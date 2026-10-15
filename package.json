@@ -1,6 +1,6 @@
 {
   "name": "joey-browser",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "license": "MIT",
   "private": true,
   "description": "Browser-local WebAssembly compatibility runtime for the original Joey game",
@@ -18,7 +18,8 @@
     "test:install": "node games/joey/original/check_compressed_install.mjs",
     "test:decoder": "node games/joey/original/check_brotli_decoder.mjs",
     "test:quality": "node games/joey/original/check_resource_quality.mjs",
-    "test:profile": "node games/joey/original/check_profile_integrity.mjs"
+    "test:profile": "node games/joey/original/check_profile_integrity.mjs",
+    "test:landscape": "node games/joey/original/check_landscape.mjs"
   },
   "devDependencies": {
     "playwright": "1.63.0"

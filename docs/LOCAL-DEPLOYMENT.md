@@ -6,12 +6,12 @@ MIT 只授权本项目自有代码和文档；原游戏和第三方组件保留�
 
 ## 下载现成部署包
 
-从 [v0.2.0 Release](https://github.com/Junming-Liang/joey-browser/releases/tag/v0.2.0) 下载 `joey-browser-v0.2.0-complete.tar.gz` 和同名 `.sha256` 文件，随后执行下方安装步骤。
+从 [v0.2.1 Release](https://github.com/Junming-Liang/joey-browser/releases/tag/v0.2.1) 下载 `joey-browser-v0.2.1-complete.tar.gz` 和同名 `.sha256` 文件，随后执行下方安装步骤。
 
 ```sh
-sha256sum -c joey-browser-v0.2.0-complete.tar.gz.sha256
-tar -xzf joey-browser-v0.2.0-complete.tar.gz
-cd joey-browser-v0.2.0-local
+sha256sum -c joey-browser-v0.2.1-complete.tar.gz.sha256
+tar -xzf joey-browser-v0.2.1-complete.tar.gz
+cd joey-browser-v0.2.1-local
 node site/setup-deployment.mjs --origin https://game.example.com
 JOEY_ORIGINAL_CONFIG="$PWD/config.local.json" \
   node --max-old-space-size=64 site/server.mjs
@@ -24,7 +24,7 @@ JOEY_ORIGINAL_CONFIG="$PWD/config.local.json" \
 在完成 [BUILD.md](BUILD.md) 并准备有权使用的原游戏输入后运行：
 
 ```sh
-python3 scripts/package-deployment.py --output .bridge/joey-browser-v0.2.0-local.tar.gz
+python3 scripts/package-deployment.py --output .bridge/joey-browser-v0.2.1-local.tar.gz
 ```
 
 可通过 `--program-root`、`--input-root`、`--light-pack-root`、`--original-pack-root` 指定现有产物。打包前核对固定输入、程序、网页文件、资源包和索引，不读取服务器私有配置或浏览器存档。原档案与普通 WASM 不重复保存，安装时从无损包及程序 gzip 还原。包与同名 `.sha256` 存在时拒绝覆盖。
@@ -34,9 +34,9 @@ python3 scripts/package-deployment.py --output .bridge/joey-browser-v0.2.0-local
 目标 Linux 机器仅需 Node.js 22 及以上、tar 和 sha256sum。先核对文件，再解包到一个新的目录：
 
 ```sh
-sha256sum -c joey-browser-v0.2.0-local.tar.gz.sha256
-tar -xzf joey-browser-v0.2.0-local.tar.gz
-cd joey-browser-v0.2.0-local
+sha256sum -c joey-browser-v0.2.1-local.tar.gz.sha256
+tar -xzf joey-browser-v0.2.1-local.tar.gz
+cd joey-browser-v0.2.1-local
 node site/setup-deployment.mjs --origin https://game.example.com
 JOEY_ORIGINAL_CONFIG="$PWD/config.local.json" \
   node --max-old-space-size=64 site/server.mjs
