@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build a private self-contained deployment from locally supplied game inputs."""
+"""Build a self-contained deployment from locally supplied game inputs."""
 import argparse, gzip, hashlib, json, os, tarfile, tempfile
 from pathlib import Path
 
@@ -62,7 +62,7 @@ def main():
         if checksum(index) != descriptor['manifestSHA256']:
             raise RuntimeError('Resource index mismatch: ' + key)
         files['packs/' + descriptor['pack']['sha256'] + '/resources.gzip.pack'] = pack
-    for name in ['LICENSE', 'THIRD_PARTY_NOTICES.md', 'version.json', 'docs/LOCAL-DEPLOYMENT.md', 'docs/BUILD.md', 'docs/DEPLOY.md', 'docs/RESOURCE-PACKS.md',
+    for name in ['LICENSE', 'THIRD_PARTY_NOTICES.md', 'GAME-CONTENT-NOTICE.md', 'version.json', 'docs/LOCAL-DEPLOYMENT.md', 'docs/BUILD.md', 'docs/DEPLOY.md', 'docs/RESOURCE-PACKS.md',
                  'games/joey/reverse/brotli-decoder-NOTICE.txt', 'games/joey/reverse/font-atlas-copyright.txt',
                  'games/joey/reverse/font-atlas-Apache-2.0.txt', 'games/joey/reverse/brotli-decoder-provenance.json']:
         files[name] = ROOT / name
@@ -92,7 +92,7 @@ def main():
         sums.write(sha + '  ' + output.name + '\n')
     print(json.dumps({'archive': str(output), 'archiveBytes': output.stat().st_size, 'sha256': sha,
                       'containsCompleteOriginalInputs': True, 'originalArchivesRestoredLosslessly': True,
-                      'scope': 'local/private use; original game redistribution is not authorized'}))
+                      'scope': 'self-contained deployment; MIT does not relicense original game content'}))
 
 if __name__ == '__main__':
     main()

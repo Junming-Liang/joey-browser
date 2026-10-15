@@ -20,7 +20,9 @@ Theseus提供DOS/Windows32位程序到Rust的静态转换和部分API兼容实�
 
 ## 原游戏
 
-原游戏程序、卡牌图像、音乐、语音和商标属于各自权利人。本仓库不附带原游戏EXE、DAT资源档案、转换后的原游戏程序或游戏资源下载器。构建所需文件由使用者自行提供，输入版本用version.json中的SHA256严格核对。
+原游戏程序、卡牌图像、音乐、语音和商标属于各自权利人，原游戏内容不适用本项目的 MIT 许可。Git 源码不包含原游戏 EXE、DAT 或转换后的游戏程序；完整部署附件单独保存在 GitHub Release，包含原版 EXE、以无损包保存的完整资源及预编译浏览器程序。输入版本用 version.json 中的 SHA-256 严格核对。
+
+维护者确认的附件发布授权及边界见 [GAME-CONTENT-NOTICE.md](GAME-CONTENT-NOTICE.md)。
 
 ## Playwright
 

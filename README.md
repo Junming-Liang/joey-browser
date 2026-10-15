@@ -12,7 +12,7 @@
 
 Joey Browser 将固定版本的原程序静态转换为 WebAssembly，在浏览器里执行原有界面、规则和 AI。Canvas 显示原版画面，Web Audio 播放原版混音，服务器提供程序和资源字节。手机与电脑使用同一套运行层。
 
-仓库提供网页运行层、Win32 兼容补丁、资源压缩工具和验证脚本。构建所需的原游戏程序、图片、音频和编译后的游戏程序由使用者自行准备；文件版本通过 SHA-256 核对。
+仓库提供网页运行层、Win32 兼容补丁、资源压缩工具和验证脚本。[完整部署附件](https://github.com/Junming-Liang/joey-browser/releases/download/v0.2.0/joey-browser-v0.2.0-complete.tar.gz) 包含原版 EXE、完整资源字节和预编译浏览器程序，可直接安装；Git 源码保持独立。游戏内容与 MIT 自有代码的许可边界见 [内容声明](GAME-CONTENT-NOTICE.md)。
 
 ## 目录
 
@@ -54,6 +54,21 @@ Joey Browser 将固定版本的原程序静态转换为 WebAssembly，在浏览�
 
 勾选完整安装后，可以在 **完整资源画质** 中选择轻量或原画原声。已安装的完整旧资源会直接复用，更新无需清除网站数据或重新下载全部内容。
 
+### 直接部署
+
+在 [v0.2.0 Release](https://github.com/Junming-Liang/joey-browser/releases/tag/v0.2.0) 下载完整部署包及其 `.sha256` 校验文件。目标服务器仅需 Node.js 22 及以上：
+
+```sh
+sha256sum -c joey-browser-v0.2.0-complete.tar.gz.sha256
+tar -xzf joey-browser-v0.2.0-complete.tar.gz
+cd joey-browser-v0.2.0-local
+node site/setup-deployment.mjs --origin https://game.example.com
+JOEY_ORIGINAL_CONFIG="$PWD/config.local.json" \
+  node --max-old-space-size=64 site/server.mjs
+```
+
+安装器无损还原原始资源、校验文件并生成独立配置，目标机无需编译 Rust。公网手机访问需按 [完整部署说明](docs/LOCAL-DEPLOYMENT.md) 配置 HTTPS 代理；服务默认绑定回环地址。
+
 ### 获取源码
 
 源码检查需要 Node.js 22 及以上、Python 3；完整资源构建的固定环境见 [构建文档](docs/BUILD.md)。
@@ -65,7 +80,7 @@ npm ci
 npm test
 ```
 
-上述命令检查源码和离线契约。自行部署游戏还需要提供版本匹配的游戏输入、构建原程序与资源包，并配置 HTTPS。
+上述命令检查源码和离线契约。从源码重建时需准备版本匹配的游戏输入和工具链；使用完整部署附件可直接进入安装流程。
 
 ## 资源安装
 

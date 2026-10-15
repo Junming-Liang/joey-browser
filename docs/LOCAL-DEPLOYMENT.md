@@ -1,8 +1,23 @@
 # Local complete deployment
 
-该工具为本地有权使用的游戏输入生成独立部署包。包内含原版 EXE、完整资源字节、预编译程序、网页运行层及两档资源包，安装无需 Rust 编译或 npm 依赖。原档案采用 v2 无损包保存，安装后还原为原始 DAT，并逐块、逐档案校验 SHA-256；原游戏文件不随公开源码或 GitHub Release 分发。
+完整部署包包含原版 EXE、完整资源字节、预编译程序、网页运行层及两档资源包，安装无需 Rust 编译或 npm 依赖。原档案采用 v2 无损包保存，安装后还原为原始 DAT，并逐块、逐档案校验 SHA-256。
 
-MIT 只授权本项目自有代码和文档；原游戏和第三方组件保留各自权利。部署包供本机使用，公开再分发须另行取得相应授权。
+MIT 只授权本项目自有代码和文档；原游戏和第三方组件保留各自权利，见 [游戏内容声明](../GAME-CONTENT-NOTICE.md)。完整游戏字节作为 Release 附件提供，Git 源码仍保持独立。
+
+## 下载现成部署包
+
+从 [v0.2.0 Release](https://github.com/Junming-Liang/joey-browser/releases/tag/v0.2.0) 下载 `joey-browser-v0.2.0-complete.tar.gz` 和同名 `.sha256` 文件，随后执行下方安装步骤。
+
+```sh
+sha256sum -c joey-browser-v0.2.0-complete.tar.gz.sha256
+tar -xzf joey-browser-v0.2.0-complete.tar.gz
+cd joey-browser-v0.2.0-local
+node site/setup-deployment.mjs --origin https://game.example.com
+JOEY_ORIGINAL_CONFIG="$PWD/config.local.json" \
+  node --max-old-space-size=64 site/server.mjs
+```
+
+这条路径无需另找游戏文件或准备编译工具链。手机公网访问仍需配置 HTTPS 代理。
 
 ## 生成部署包
 
@@ -14,7 +29,7 @@ python3 scripts/package-deployment.py --output .bridge/joey-browser-v0.2.0-local
 
 可通过 `--program-root`、`--input-root`、`--light-pack-root`、`--original-pack-root` 指定现有产物。打包前核对固定输入、程序、网页文件、资源包和索引，不读取服务器私有配置或浏览器存档。原档案与普通 WASM 不重复保存，安装时从无损包及程序 gzip 还原。包与同名 `.sha256` 存在时拒绝覆盖。
 
-## 安装和运行
+## 自建包的安装和运行
 
 目标 Linux 机器仅需 Node.js 22 及以上、tar 和 sha256sum。先核对文件，再解包到一个新的目录：
 
