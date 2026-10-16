@@ -1,62 +1,104 @@
+<div align="center">
+
 # Joey Browser
 
-**在浏览器中运行《游戏王：混沌力量 · 城之内篇》的原版程序。**
+**在浏览器中运行《游戏王：混沌力量 · 城之内篇》的原版程序**
+
+WebAssembly 本机执行 · 原版界面与 AI · 手机触控 · 按需资源与断点续传
 
 [![Source checks](https://github.com/Junming-Liang/joey-browser/actions/workflows/checks.yml/badge.svg?branch=main)](https://github.com/Junming-Liang/joey-browser/actions/workflows/checks.yml)
-[![Version](https://img.shields.io/badge/version-0.2.1-blue)](CHANGELOG.md)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![Node.js](https://img.shields.io/badge/Node.js-%E2%89%A522-339933)](docs/BUILD.md)
-[![Status](https://img.shields.io/badge/status-compatibility%20preview-orange)](docs/VERIFICATION.md)
+[![GitHub release](https://img.shields.io/github/v/release/Junming-Liang/joey-browser)](https://github.com/Junming-Liang/joey-browser/releases)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![Status: preview](https://img.shields.io/badge/status-compatibility%20preview-orange.svg)](docs/VERIFICATION.md)
 
-[在线体验](https://106.12.148.75:8443/joey/original/) · [快速开始](#快速开始) · [构建](docs/BUILD.md) · [部署](docs/DEPLOY.md) · [更新日志](CHANGELOG.md) · [提交问题](https://github.com/Junming-Liang/joey-browser/issues)
+[在线体验](https://106.12.148.75:8443/joey/original/) · [快速开始](#快速开始) · [自行部署](#自行部署) · [开发指南](#开发与测试) · [发布记录](https://github.com/Junming-Liang/joey-browser/releases) · [报告问题](https://github.com/Junming-Liang/joey-browser/issues)
 
-Joey Browser 将固定版本的原程序静态转换为 WebAssembly，在浏览器里执行原有界面、规则和 AI。Canvas 显示原版画面，Web Audio 播放原版混音，服务器提供程序和资源字节。手机与电脑使用同一套运行层。
+</div>
 
-仓库提供网页运行层、Win32 兼容补丁、资源压缩工具和验证脚本。[完整部署附件](https://github.com/Junming-Liang/joey-browser/releases/download/v0.2.1/joey-browser-v0.2.1-complete.tar.gz) 包含原版 EXE、完整资源字节和预编译浏览器程序，可直接安装；Git 源码保持独立。游戏内容与 MIT 自有代码的许可边界见 [内容声明](GAME-CONTENT-NOTICE.md)。
+Joey Browser 为固定版本的城之内汉化程序提供浏览器兼容运行环境。原程序的 x86 机器码经静态转译生成 Rust，再编译为 WebAssembly；游戏逻辑、画面生成和混音在访问者的设备上运行，服务器负责分发程序与资源。
 
-## 目录
+项目处于 **兼容性预览** 阶段，完整对局、所有卡片效果及不同实体手机的表现仍在持续验证。已验证范围见 [验证记录](docs/VERIFICATION.md)。MIT 适用于本项目自有代码与文档，原游戏和第三方内容保留各自声明，见 [许可与致谢](#许可与致谢)。
 
-- [功能](#功能)
+![原版标题界面与手机横屏辅助操作](docs/images/landscape-preview.png)
+
+*界面示例：桌面 WebKit 的手机横屏尺寸模拟，画面保持原版 4:3 比例，辅助操作位于右侧。[截图来源与权利说明](docs/images/README.md)。*
+
+## 导航
+
+- [功能概览](#功能概览)
 - [快速开始](#快速开始)
-- [资源安装](#资源安装)
-- [架构](#架构)
-- [构建与部署](#构建与部署)
+- [浏览器要求](#浏览器要求)
+- [资源与存档](#资源与存档)
+- [自行部署](#自行部署)
+- [工作原理](#工作原理)
 - [开发与测试](#开发与测试)
-- [项目结构](#项目结构)
-- [当前状态](#当前状态)
+- [文档导航](#文档导航)
 - [常见问题](#常见问题)
-- [贡献](#贡献)
+- [参与贡献](#参与贡献)
 - [许可与致谢](#许可与致谢)
 
-## 功能
+## 功能概览
 
-- **原版程序运行**：保留菜单、卡组管理、决斗流程和城之内 AI；原始画布为 800 × 600。
-- **手机操作**：横屏缩放、点按、拖动、右键辅助、回车、空格、返回与设备键盘。
-- **原版声音**：PCM 混音通过 AudioWorklet 播放，提供声音恢复按钮。
-- **按需资源**：默认先准备常用资源，其他素材随游戏读取；音乐采用小范围读取和预取。
-- **可选完整安装**：提供约 180 MB 的轻量资源和约 228 MB 的原画原声资源。
-- **缓存与续传**：程序、资源及未完成的下载分段保存在浏览器中，旧完整缓存直接复用。
-- **独立存档**：玩家文件与资源缓存分开保存；浏览器标签协调独占写入。
-- **全卡与卡组**：原版 771 种卡片解锁、45 套兼容预设卡组及收藏／卡组备份恢复。
-- **运行诊断**：下载进度、缓存、渲染、音频和错误信息可复制反馈。
-
-当前原版入口以与城之内 AI 决斗为主；双人联网决斗尚未纳入本仓库的验证范围。
+- **原版程序运行**：沿用原程序的菜单、卡组管理、决斗逻辑和城之内 AI，原始画面为 800 × 600。
+- **手机操作**：点按、拖动、右键辅助、常用按键和设备键盘；横屏按可用高度显示原版画面。
+- **浏览器声音**：PCM 混音经 AudioWorklet 播放，支持通过用户操作恢复声音。
+- **按需资源**：先准备常用资源，其他素材随游戏读取，也可选择安装完整资源。
+- **缓存与续传**：程序、资源及未完成的下载分段保存在本机，重新打开时复用已有内容。
+- **卡组与存档**：全卡解锁、预设卡组、收藏／卡组备份恢复，以及多标签独占写入保护。
+- **运行诊断**：下载进度、缓存、渲染和声音状态可查看、复制和反馈。
 
 ## 快速开始
 
-### 直接体验
+1. 使用独立浏览器打开 [在线体验](https://106.12.148.75:8443/joey/original/)。iPhone／iPad 建议使用 Safari，Android 建议使用独立 Chrome。
+2. 手机转为横屏，点击 **启动原版游戏**；当前在线入口无需密码。
+3. 等待程序和常用资源准备完成。完整资源安装为可选项。
 
-1. 打开 [在线体验](https://106.12.148.75:8443/joey/original/)，手机建议横屏。
-2. 点击 **启动原版游戏**。当前演示入口无需密码。
-3. 使用屏幕上的原版界面操作；工具栏提供右键、键盘和常用按键。
+点按原版界面进行选择，按住卡片可拖动。需要右键时，先点目标位置，再点工具栏的 **右键**；工具栏还提供回车、空格、返回、键盘和声音恢复。当前名称输入支持英文、数字及常见英文标点。
 
-默认采用按需加载。首次启动的程序与常用资源压缩传输预计约 50 MB，后续再读取未缓存内容；这是固定资源片段的压缩估算，实际传输随缓存和网络响应变化。
+遇到启动或运行异常时，点击 **复制运行信息**，连同具体操作步骤提交到 [Issues](https://github.com/Junming-Liang/joey-browser/issues)。
 
-勾选完整安装后，可以在 **完整资源画质** 中选择轻量或原画原声。已安装的完整旧资源会直接复用，更新无需清除网站数据或重新下载全部内容。
+## 浏览器要求
 
-### 直接部署
+运行环境需要 HTTPS 安全上下文、COOP／COEP 跨源隔离、WebAssembly 共享内存、Web Workers 和 AudioWorklet。玩家存档使用 IndexedDB 与 Web Locks；完整资源安装依赖可用的持久存储。
 
-在 [v0.2.1 Release](https://github.com/Junming-Liang/joey-browser/releases/tag/v0.2.1) 下载完整部署包及其 `.sha256` 校验文件。目标服务器仅需 Node.js 22 及以上：
+| 环境 | 当前说明 |
+| --- | --- |
+| 桌面 Chromium、WebKit | 已用专用配置验证启动、资源、存档及部分游戏流程，详见 [验证记录](docs/VERIFICATION.md) |
+| iOS／iPadOS、Android 独立浏览器 | 以页面实际能力检测和实体设备表现为准，持续收集兼容性反馈 |
+| 应用内置网页／WebView | 可能未开放共享内存；请复制链接到独立浏览器，或选择应用菜单的“在浏览器中打开” |
+| 直接打开本地 HTML | 请使用匹配的 HTTP／HTTPS 网关，环境要求见 [部署指南](docs/DEPLOY.md) |
+
+当前入口提供与电脑 AI 的单人游戏，玩家之间的联网决斗尚未实现。项目绑定固定游戏输入；其他 EXE、资源版本和浏览器环境需要单独验证。
+
+## 资源与存档
+
+### 选择加载方式
+
+| 方式 | 下载内容 | 适合场景 |
+| --- | --- | --- |
+| **按需加载，默认** | 程序与首批常用资源预计约 50 MB，其余随后读取 | 尽快开始，随游玩逐步建立缓存 |
+| **完整轻量资源** | 资源包约 180 MB，另需共用程序约 16 MB | 缩小完整安装体积，减少后续资源请求 |
+| **完整原画原声** | 资源包约 228 MB，另需共用程序约 16 MB | 使用无损资源包 |
+
+MB 使用十进制。首启数字是固定常用片段的压缩估算，并非所有网络及缓存条件下的实测下载量。完整资源和程序分开计数；精确大小、索引与解码器开销见 [资源包说明](docs/RESOURCE-PACKS.md#测量口径) 和 [version.json](version.json)。
+
+轻量档只对卡图和声音采样做声明范围内的有损处理，界面、文字、字体、卡背、遮罩及声音采样率、声道和时长保持原样。资源下载支持续传，完整安装完成前会逐块校验持久化数据；已有完整旧资源可以继续复用。
+
+### 玩家文件保存在当前浏览器
+
+卡组、收藏及已写入的玩家文件保存在当前站点的浏览器存储中。关闭页面会结束当前运行；重新打开会启动游戏并读取存档，目前没有恢复整段运行内存的断点续玩功能。
+
+存档尚未提供跨设备云同步。清除网站数据、换浏览器或换站点地址会影响存档与资源缓存；同一浏览器同时启动第二个游戏标签时，会提示先关闭占用存档的页面。
+
+## 自行部署
+
+**源码仓库、手机资源安装和服务器部署归档对应不同用途。** Git 源码不包含原游戏 EXE／DAT 或编译后的游戏程序；完整部署归档可携带这些固定输入和程序，手机资源安装只获取客户端运行所需内容。
+
+### 已取得完整部署包
+
+在 [Releases](https://github.com/Junming-Liang/joey-browser/releases) 确认对应版本实际提供的附件。`joey-browser-<版本>-complete.tar.gz` 及其校验文件属于完整部署包；GitHub 自动生成的 **Source code** 和 `*-source.zip` 均为源码包。如果发布版本只提供源码，请按下一节自行构建。
+
+以下以 v0.2.1 完整归档为例。目标环境为 Linux、Node.js 22 及以上，并需要 `tar` 和 `sha256sum`：
 
 ```sh
 sha256sum -c joey-browser-v0.2.1-complete.tar.gz.sha256
@@ -67,11 +109,47 @@ JOEY_ORIGINAL_CONFIG="$PWD/config.local.json" \
   node --max-old-space-size=64 site/server.mjs
 ```
 
-安装器无损还原原始资源、校验文件并生成独立配置，目标机无需编译 Rust。公网手机访问需按 [完整部署说明](docs/LOCAL-DEPLOYMENT.md) 配置 HTTPS 代理；服务默认绑定回环地址。
+安装器校验输入、还原原始资源并生成独立配置；目标服务器无需 Rust 编译或 npm 依赖安装。服务绑定回环地址，公网访问需配置 HTTPS 反向代理，详见 [完整部署说明](docs/LOCAL-DEPLOYMENT.md)。已有服务的升级与回滚按 [部署指南](docs/DEPLOY.md) 操作。
 
-### 获取源码
+### 从源码构建部署包
 
-源码检查需要 Node.js 22 及以上、Python 3；完整资源构建的固定环境见 [构建文档](docs/BUILD.md)。
+先按 [BUILD.md](docs/BUILD.md) 准备版本匹配的游戏输入、固定工具链与构建输出，再执行：
+
+```sh
+python3 scripts/package-deployment.py \
+  --output .bridge/joey-browser-v0.2.1-complete.tar.gz
+```
+
+构建器核对原始输入、程序、网页文件与资源包身份，生成部署归档及同名 `.sha256` 文件。输入清单、路径参数和安装步骤见 [LOCAL-DEPLOYMENT.md](docs/LOCAL-DEPLOYMENT.md)；内容许可边界见 [游戏内容声明](GAME-CONTENT-NOTICE.md)。
+
+## 工作原理
+
+构建阶段使用固定提交的 [Theseus](https://github.com/evmar/theseus) 分析原 EXE，生成表达机器指令行为的 Rust，再连同游戏适配和 Win32 兼容层编译为 WebAssembly。生成代码保留寄存器、内存和控制流语义，原厂的高级语言工程源码并未恢复。
+
+运行阶段由浏览器执行程序，网页运行层承接画面、声音、输入和文件读写：
+
+```mermaid
+flowchart LR
+  subgraph Browser[访问者的浏览器]
+    Game[Worker: 原程序与兼容层 WebAssembly] <--> Host[JavaScript 网页运行层]
+    Host --> Canvas[Canvas 原版画面]
+    Host --> Audio[AudioWorklet 原版混音]
+    Input[触屏、鼠标与键盘] --> Host
+    Host <--> Reader[资源读取与解码]
+    Reader <--> Cache[IndexedDB 资源缓存]
+    Host <--> Saves[独立玩家存档]
+  end
+  Reader <-->|HTTPS 字节范围| Gateway[Node.js 资源网关]
+  Gateway --> Assets[程序与资源文件]
+```
+
+游戏规则和 AI 在访问者的设备上计算，服务器主要承担程序、资源和少量诊断请求。资源采用分块压缩和身份校验，运行时按原始文件偏移恢复所需内容。更换输入版本需要重新分析、构建和验证。
+
+## 开发与测试
+
+### 获取源码并执行离线检查
+
+需要 Node.js 22 及以上和 Python 3：
 
 ```sh
 git clone https://github.com/Junming-Liang/joey-browser.git
@@ -80,150 +158,87 @@ npm ci
 npm test
 ```
 
-上述命令检查源码和离线契约。从源码重建时需准备版本匹配的游戏输入和工具链；使用完整部署附件可直接进入安装流程。
-
-## 资源安装
-
-| 方式 | 下载范围 | 适合场景 |
-| --- | --- | --- |
-| 按需加载，默认 | 程序与首批常用资源预计约 50 MB；其余随后读取 | 希望尽快进入游戏 |
-| 完整轻量资源 | 资源包及索引、解码器约 180.0 MB | 希望减小完整安装体积 |
-| 完整原画原声 | 资源包及索引、解码器约 228.4 MB | 希望保留原始素材精度 |
-
-完整资源数字不包含两档共用的游戏程序；程序 gzip 约 16.1 MB。两档沿用同一批原始资源、文件大小和目录偏移。相比当前原画原声包，轻量安装少约 48.3 MB，减少约 21.2%。[测量口径与原始数据](docs/RESOURCE-PACKS.md#测量口径)。
-
-轻量档仅处理 **776 幅卡图** 和 **131 个 WAV 的 PCM 数据**：卡图每通道保留高 6 位、音频保留 13 位有效精度。界面图片、背景、文字、字体、卡背、遮罩、透明素材，以及音频的采样率、声道和时长保持原样。
-
-资源以独立压缩块保存，游戏仍按原文件偏移读取。安装完成前会逐块校验持久化数据；下载中断后继续读取尚未保存的部分。已有完整原版缓存优先复用；选择原画原声时不会使用轻量缓存替代。
-
-## 架构
-
-游戏逻辑、画面生成和混音在访问者的浏览器中运行。资源网关负责提供带身份校验的静态文件与字节范围。
-
-```mermaid
-flowchart LR
-  subgraph Browser[浏览器]
-    Input[原版界面与触屏工具栏] --> Game[Worker: 原程序 WebAssembly]
-    Game --> Host[Win32 浏览器运行层]
-    Host --> Canvas[Canvas 画面]
-    Host --> Audio[AudioWorklet 声音]
-    Host --> Reader[按需或完整资源读取器]
-    Reader <--> Cache[IndexedDB 资源缓存]
-    Game <--> Saves[独立玩家存档]
-    Reader --> Decoder[Worker: 整数 Brotli 解码]
-  end
-  Reader <-->|HTTPS 字节范围| Gateway[Node.js 资源网关]
-  Gateway --> Assets[部署者准备的程序与资源]
-```
-
-转换器与基础 Win32 兼容层来自固定提交的 [Theseus](https://github.com/evmar/theseus)。本项目维护游戏适配补丁、浏览器输入／绘图／音频接口、资源读取和存档管理。
-
-手机访问要求 HTTPS 安全上下文，以及 COOP／COEP 跨源隔离。运行层需要 WebAssembly 共享内存、Worker、AudioWorklet、IndexedDB 和原生解压能力。能力不足或存储不可用时，页面会提供运行诊断；完整安装依赖持久存储。
-
-## 构建与部署
-
-| 文档 | 内容 |
-| --- | --- |
-| [BUILD.md](docs/BUILD.md) | 原始输入、固定工具链、兼容补丁、程序转换和资源包生成 |
-| [DEPLOY.md](docs/DEPLOY.md) | 本地配置、资源目录、HTTPS、systemd、发布与回滚 |
-| [LOCAL-DEPLOYMENT.md](docs/LOCAL-DEPLOYMENT.md) | 用本地游戏输入生成完整部署包，目标机无需重新编译 |
-| [RESOURCE-PACKS.md](docs/RESOURCE-PACKS.md) | 压缩格式、轻量策略、缓存身份、续传和体积口径 |
-| [VERIFICATION.md](docs/VERIFICATION.md) | 已完成的验证、环境和当前限制 |
-| [version.json](version.json) | 运行版本、源文件、兼容补丁与资源包固定哈希 |
-
-部署脚本使用独立服务和回环端口，发布失败时恢复配置。完整轻量包与原画包分别安装在以哈希命名的目录，原画包是当前质量选项的必需资源；旧包保留供缓存续传和代码回滚使用。
-
-已准备游戏输入和构建产物的部署者，可用 `npm run package:local -- --output .bridge/local-deployment.tar.gz` 生成本机完整包。安装器从无损包还原原资源并核对哈希，目标机器仅需 Node.js；游戏版权内容不随公开源码发行。
-
-## 开发与测试
-
-### 无需游戏文件的检查
-
-```sh
-npm test
-```
-
-包括 JavaScript 语法与来源校验、资源网关范围读取契约、PCM 队列与边界、安装器无损还原和文件保护，以及部署归档校验和回滚的离线测试。CI 执行这一层检查。
+`npm test` 无需原游戏文件，覆盖语法与来源校验、范围读取契约、PCM 队列、安装器还原及文件保护、部署归档与失败回滚。GitHub Actions 执行这一层检查；CI 通过不代表全部卡片效果或实体手机性能已验收。
 
 ### 构建后的浏览器检查
 
+准备固定游戏输入和构建输出后，安装 Playwright 浏览器，按改动范围执行对应检查：
+
 ```sh
 npx playwright install --with-deps chromium webkit
-npm run test:downloads
 npm run test:startup
-npm run test:quality
-npm run test:decoder
-npm run test:install
+npm run test:landscape
 npm run test:game
 ```
 
-完整检查需要本机固定游戏输入和构建输出。测试使用专用存档和浏览器上下文；`JOEY_CHROMIUM_PATH` 可指定现有 Chromium。测试结果应区分桌面浏览器的触控模拟与实体手机。
+另有 `test:downloads`、`test:quality`、`test:decoder`、`test:install` 和 `test:profile`，分别覆盖续传、资源质量、解码器、完整安装和玩家文件。`JOEY_CHROMIUM_PATH` 可指定已有 Chromium。测试使用专用存档和浏览器上下文；准备方式与验证边界见 [贡献指南](CONTRIBUTING.md) 和 [验证记录](docs/VERIFICATION.md)。
 
-## 项目结构
+## 文档导航
+
+| 文档 | 适用读者与内容 |
+| --- | --- |
+| [BUILD.md](docs/BUILD.md) | 构建者：固定输入、工具链、静态转译与资源生成 |
+| [LOCAL-DEPLOYMENT.md](docs/LOCAL-DEPLOYMENT.md) | 部署者：完整归档的打包、校验、安装与启动 |
+| [DEPLOY.md](docs/DEPLOY.md) | 运维者：HTTPS、独立服务、升级与回滚 |
+| [RESOURCE-PACKS.md](docs/RESOURCE-PACKS.md) | 开发者：压缩策略、缓存身份、续传与体积口径 |
+| [VERIFICATION.md](docs/VERIFICATION.md) | 使用者与贡献者：已验证行为、版本及待验证事项 |
+| [CHANGELOG.md](CHANGELOG.md) | 版本变更；公开附件以 [Releases](https://github.com/Junming-Liang/joey-browser/releases) 为准 |
+| [version.json](version.json) | 当前源码对应的运行版本、原始输入与产物 SHA-256 |
 
 ```text
-.
-├── games/joey/
-│   ├── original/       # 原版网页、Worker、存档、服务与浏览器检查
-│   └── reverse/        # 兼容补丁、转换与资源压缩工具
-├── build-inputs/        # 固定版本的转换入口和导入审计
-├── deploy/              # 反向代理与独立服务示例
-├── docs/                # 构建、部署、资源与验证文档
-├── scripts/             # 源码与来源检查
-├── releases/            # 版本说明
-├── CHANGELOG.md
-├── CONTRIBUTING.md
-├── LICENSE
-├── THIRD_PARTY_NOTICES.md
-└── version.json
+games/joey/
+├── original/       # 网页、运行层、存档、网关与浏览器检查
+└── reverse/        # 转译工具、兼容补丁、资源与音频模块
+build-inputs/       # 固定转换入口与导入审计
+deploy/             # 反向代理与独立服务配置示例
+docs/               # 构建、部署、资源、验证与界面截图
+scripts/            # 源码核对与部署包工具
+releases/           # 版本说明
 ```
 
-`.bridge/` 是本地构建和测试工作目录，原游戏文件、生成程序、资源包和浏览器数据均不提交到仓库。唯一随源码发布的 WASM 是声明来源及许可的 Brotli 解码器。
-
-## 当前状态
-
-`v0.2.1` 对应运行版本 **`20261015-131102-786bb37f`**，目前作为兼容性预览维护。
-
-已在 Chromium 和 WebKit 中验证完整资源的 458 个块、实际下载中断后的续传、旧缓存兼容、质量选择隔离、错误解码与取消、存档保持，以及卡组界面中的持续音乐播放。公网 HTTPS 上的两档资源读取和程序启动也已验证。
-
-完整胜负与奖励、所有卡片效果、全部重放流程、中文输入法和所有实体手机的流畅度仍需继续验证。当前键盘输入支持英文、数字和常见英文标点。详细范围见 [验证记录](docs/VERIFICATION.md)。
+`.bridge/` 为本地工作目录，不提交游戏原始输入、生成程序、资源包、浏览器存档或认证配置。源码随附的第三方 Brotli 解码器 WASM 有独立的来源、许可和校验值。
 
 ## 常见问题
 
-**安卓内置网页提示缺少共享内存怎么办？**
+**缺少共享内存，或应用内置网页无法启动？**
 
-请复制网址到独立 Chrome 浏览器打开，或使用所在应用菜单的“在浏览器中打开”。游戏根据真实的安全上下文、跨源隔离和共享内存能力判断是否可启动；同一内核版本的应用内置网页与独立浏览器可能开放不同能力。
+复制链接到独立浏览器，或选择应用菜单的“在浏览器中打开”。同一内核版本的内置网页与独立浏览器可能开放不同能力。页面在准备阶段检查实际能力，异常时提供可复制的诊断。
 
-**为什么刷新后不必重新下载完整资源？**
+**多人可以同时打开吗？**
 
-程序和资源分段保存在当前站点的 IndexedDB 中，完成标记与资源身份绑定。刷新后复用这些字节；清除网站数据、切换域名或浏览器回收存储会影响缓存和存档。
+可以，各自在自己的浏览器与电脑 AI 决斗，玩家文件互相独立。当前没有玩家之间的联网对战。只切换后台时，网页可能被浏览器挂起或回收；关闭自己的页面会停止自己的游戏。
 
-**旧缓存会被强制替换成轻量版吗？**
+**下载中断、刷新或更新后，需要重新安装吗？**
 
-完整旧资源会继续使用；旧包下载到一半也可以续传。轻量版主要降低新完整安装的下载量，资源缓存仍受浏览器配额及既定容量策略限制。
+程序和资源按段保存，重新打开会继续获取未保存的部分。已有完整旧资源优先复用；选择原画原声时不会用轻量缓存替代。清除站点数据或浏览器回收存储会影响这些内容。
 
-**能直接打开 HTML 或放到普通静态托管上吗？**
+**为什么服务器部署包比手机完整资源安装更大？**
 
-完整运行需要资源范围接口、正确响应头、持久化资源身份和跨源隔离。请按部署文档提供匹配的网关与 HTTPS 配置。
+服务器归档包含原 EXE、浏览器程序和两档资源包；手机只下载运行所需的程序及选定资源。两者用途和包含内容不同，比较体积时应先确认下载对象。
 
-**能使用其他版本的 EXE 和资源吗？**
+**可以加载任意 EXE，或者保证所有手机都流畅吗？**
 
-当前转换入口、兼容补丁和引用哈希绑定固定版本。更换输入需要重新分析、构建和验证，相关哈希不应直接改成新值来跳过检查。
+转换结果绑定固定游戏输入和已实现的兼容接口。其他程序需要单独分析与适配；浏览器能力、设备资源及缓存状态也影响运行。完整胜负、全部卡片效果、重放、中文输入法和更多实体设备仍需继续验证，详见 [验证记录](docs/VERIFICATION.md)。
 
-## 贡献
+## 参与贡献
 
-欢迎提交兼容性问题、可复现性能记录、文档改进和补丁。请先阅读 [CONTRIBUTING.md](CONTRIBUTING.md)；问题中注明运行版本和具体操作，提交时附验证方式及未验证范围。
+欢迎提交兼容性修复、可复现的性能记录、资源读取改进与文档更新。请先阅读 [CONTRIBUTING.md](CONTRIBUTING.md)。
 
-涉及令牌、私人数据或安全漏洞的问题请按照 [SECURITY.md](SECURITY.md) 处理。
+- **报告问题**：提供运行版本、系统与浏览器、具体操作、预期和实际结果，并附经检查的运行信息。
+- **改进实现**：保持原文件偏移、缓存身份、输入顺序与玩家存档隔离，附相关验证命令和未覆盖范围。
+- **反馈手机表现**：说明场景、网络和缓存状态，区分持续卡顿、加载等待与声音中断。
+- **报告安全问题**：按 [SECURITY.md](SECURITY.md) 处理，不在公开 Issue 中粘贴密钥、服务器私有配置或私人存档。
+
+当前重点是原版完整流程的覆盖、移动浏览器稳定性与资源读取体验。功能或性能变化应由可复现的实际场景支持。
 
 ## 许可与致谢
 
-本项目自有代码与文档采用 **[MIT License](LICENSE)**，允许使用、修改、分发和商用，分发时需保留版权及许可声明。
+本项目自有代码和文档采用 **[MIT License](LICENSE)**。原游戏程序、资源、截图中的图像与商标，以及第三方组件保留各自版权和许可。完整游戏内容的附件分发说明见 [GAME-CONTENT-NOTICE.md](GAME-CONTENT-NOTICE.md)。
 
-- **Theseus**：转换器与基础兼容实现，固定提交和来源见 [第三方声明](THIRD_PARTY_NOTICES.md)。
-- **brotli-dec-wasm**：整数解码器，保留 MIT／Apache-2.0 许可及内存上限修改说明。
-- **WenQuanYi Micro Hei**：兼容字形数据采用版权文件提供的 Apache-2.0 许可选项。
-- **Playwright**：浏览器验证工具，Apache-2.0。
-- **原游戏及商标**：属于各自权利人，使用者自行准备具备使用权限的输入。
+- [Theseus](https://github.com/evmar/theseus)：x86 静态转译和基础 Win32 兼容实现。本仓库发布固定版本的适配补丁；该上游固定提交未附许可证，本项目不替上游授予 MIT 许可。
+- [brotli-dec-wasm](https://github.com/ustclug-dev/brotli-dec-wasm)：资源解码器，保留 MIT／Apache-2.0 声明与修改记录。
+- WenQuanYi Micro Hei：兼容字形数据采用其提供的 Apache-2.0 许可选项。
+- [Playwright](https://github.com/microsoft/playwright)：Chromium／WebKit 浏览器验证工具。
+- 卡组配方整理者及兼容性反馈者：来源与配方记录保留在对应目录中。
 
-第三方代码、字形数据、卡组配方与原游戏内容保留各自版权和许可；本项目的 MIT 许可不替代这些声明。固定 Theseus 提交未附许可证，本仓库只提供适配补丁，不对其上游代码授予许可。具体来源和分发边界见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。
+完整来源、固定版本与分发边界见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。

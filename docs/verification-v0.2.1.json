@@ -1,0 +1,75 @@
+{
+  "scope": "Desktop Chromium/WebKit with dedicated profiles and simulated phone dimensions/capability failures; physical mobile devices and complete duels not accepted by this record",
+  "programSHA256": "9b3d37007d31af4db92674061306ba7a57c2d848a5aab964a8736b6fbf13481e",
+  "startup": {
+    "runtimeVersion": "20261015-131102-786bb37f",
+    "command": "node games/joey/original/check_startup.mjs .bridge/joey-web/reverse/output/original-preview",
+    "normal": [
+      {
+        "engine": "chromium",
+        "renders": 5,
+        "audioContext": "running"
+      },
+      {
+        "engine": "webkit",
+        "renders": 5,
+        "audioContext": "running"
+      }
+    ],
+    "blockedBeforeStart": [
+      {
+        "engine": "chromium",
+        "simulatedPlatform": "Android WebView",
+        "secureContext": true,
+        "isolated": false,
+        "sharedMemory": false,
+        "stage": "host-failed",
+        "startupPhase": "creating-host",
+        "guidance": "Open the URL in standalone Chrome"
+      },
+      {
+        "engine": "webkit",
+        "simulatedPlatform": "Android WebView",
+        "secureContext": true,
+        "isolated": false,
+        "sharedMemory": false,
+        "stage": "host-failed",
+        "startupPhase": "creating-host",
+        "guidance": "Open the URL in standalone Chrome"
+      }
+    ]
+  },
+  "landscape": {
+    "runtimeVersion": "20261015-121836-df1d7703",
+    "command": "npm run test:landscape -- --url https://106.12.148.75:8443/joey/original/",
+    "engines": [
+      "chromium",
+      "webkit"
+    ],
+    "cases": [
+      "portrait",
+      "landscape",
+      "browser-bars",
+      "small-landscape",
+      "safe-area",
+      "portrait-again"
+    ],
+    "scope": "Public original program; aspect ratio, bounds, viewport rotation, diagnostic expansion and touch delivery checks passed"
+  },
+  "publicPreflight": {
+    "runtimeVersion": "20261015-131102-786bb37f",
+    "engine": "webkit",
+    "cases": [
+      {
+        "simulatedMissingCapabilities": false,
+        "startDisabled": false,
+        "gameDownloads": 0
+      },
+      {
+        "simulatedMissingCapabilities": true,
+        "startDisabled": true,
+        "gameDownloads": 0
+      }
+    ]
+  }
+}

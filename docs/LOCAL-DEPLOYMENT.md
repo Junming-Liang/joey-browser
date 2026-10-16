@@ -6,7 +6,9 @@ MIT 只授权本项目自有代码和文档；原游戏和第三方组件保留�
 
 ## 下载现成部署包
 
-从 [v0.2.1 Release](https://github.com/Junming-Liang/joey-browser/releases/tag/v0.2.1) 下载 `joey-browser-v0.2.1-complete.tar.gz` 和同名 `.sha256` 文件，随后执行下方安装步骤。
+先在 [Releases](https://github.com/Junming-Liang/joey-browser/releases) 确认对应版本实际提供的附件。完整部署归档命名为 `joey-browser-<版本>-complete.tar.gz`，另附同名 `.sha256` 文件。GitHub 的 **Source code** 以及 `*-source.zip` 属于源码包，不包含完整运行内容；如果某个发布版本只提供源码，请按下节自行生成部署包。
+
+以下以已取得的 v0.2.1 完整归档为例：
 
 ```sh
 sha256sum -c joey-browser-v0.2.1-complete.tar.gz.sha256
