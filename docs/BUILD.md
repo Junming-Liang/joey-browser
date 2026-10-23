@@ -70,7 +70,7 @@ cp .bridge/joey-web/research/theseus/out/joey_cn/card-callback-entry-provenance.
   .bridge/joey-web/reverse/output/card-callback-entry-provenance.json
 ```
 
-参考 WASM 为 83,795,927 字节，gzip 为 16,090,839 字节。固定 SHA 见 `version.json`。这次源码同步核对兼容补丁及已接受产物，没有重新执行整个 Rust 编译；自行重建不匹配时，应核实工具链和输入，而非跳过固定哈希。
+v0.3.0 已重新构建收藏卡、字幕和联机运行时。产物大小与固定 SHA 见 `version.json`；重建不匹配时应核实工具链与输入。
 
 ## 4. 生成三个资源包
 
@@ -125,7 +125,18 @@ JS
 
 再执行 `python3 games/joey/reverse/prepare_brotli_decoder.py`。该步骤检查发布包 SHA，并解析 WASM 内存段，将解码器线性内存上限设为 32 MiB；它不修改游戏 WASM。
 
-## 5. 打包网页运行层
+## 5. 生成收藏卡与字幕
+
+仓库附带五张卡的插画、原尺寸 BMP、卡文与校对后的双语台词。修改插画或说明时，可重新运行 `node games/joey/reverse/render_custom_cards.mjs`；需要 Playwright Chromium、Fontconfig、Arial 与 Times New Roman。卡框从固定 data.dat 读取。
+
+```sh
+python3 games/joey/reverse/prepare_custom_resources.py
+python3 games/joey/reverse/prepare_subtitles.py --voice-dat .bridge/joey-web/reverse/input/Voice.dat --catalog-output games/joey/original/subtitle-catalog.mjs --rust-output .bridge/joey-web/research/theseus/win32/winapi/src/voice_catalog.rs --transcripts games/joey/custom/joey-subtitles.json
+```
+
+增量默认生成到 `.bridge/joey-web/reverse/output/custom-resources`。改变 Rust 声音索引后需重新编译 WASM。
+
+## 6. 打包网页运行层
 
 ```sh
 npm run build:preview

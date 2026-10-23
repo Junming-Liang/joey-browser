@@ -36,6 +36,19 @@ export function withProfileKey(files){
  const system=files.find(file=>file.path===systemPath);if(!system)return files;
  return [...files.filter(file=>file.path!==keyPath),{path:keyPath,bytes:encodeOriginal(decodeCollection(system.bytes).subarray(0,8))}];
 }
+export function assertOnlineDeck(files){
+ const bytes=files.find(file=>file.path==='/deck.ydc')?.bytes;
+ if(!bytes)return; // A fresh profile uses the original starter deck.
+ if(!(bytes instanceof Uint8Array)||bytes.length<14)throw Error('当前卡组文件无效，请选择一套预设卡组后重试');
+ const view=new DataView(bytes.buffer,bytes.byteOffset,bytes.byteLength);let offset=8;
+ for(let group=0;group<3;group++){
+  if(offset+2>bytes.length)throw Error('当前卡组文件不完整，请选择一套预设卡组后重试');
+  const count=view.getUint16(offset,true);offset+=2;
+  if(offset+count*2>bytes.length)throw Error('当前卡组文件不完整，请选择一套预设卡组后重试');
+  for(let i=0;i<count;i++,offset+=2){const id=view.getUint16(offset,true)%2000;if(id>=1950&&id<=1954){const error=Error('收藏卡仅限单人游戏。请从主卡组、副卡组和融合卡组移除凉茶、年糕、大葱、猴子、仙人掌，或在启动前选择一套原版预设卡组。');error.code='COLLECTIBLE_ONLINE_DECK';throw error;}}
+ }
+ if(offset!==bytes.length)throw Error('当前卡组文件格式无效，请选择一套预设卡组后重试');
+}
 export function applyCollectionPatch(files,catalog,{unlock=false,deckId='',installDecks=false}={}){
  const system=files.find(file=>file.path===systemPath);
  if(!unlock&&!deckId&&!installDecks)return withProfileKey(files);

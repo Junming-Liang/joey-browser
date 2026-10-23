@@ -28,13 +28,13 @@ def main():
     revision = json.loads((args.program_root / 'revision.json').read_text())
     if revision['wasmSHA256'] != version['wasmSHA256'] or revision['programGzipSHA256'] != version['programGzipSHA256']:
         raise RuntimeError('Unreviewed program identity')
-    runtime = {Path(name).name: sha for name, sha in version['runtimeSources'].items()}
-    expected = set(runtime) | {'resource-layout.mjs', 'resources.manifest.json', 'joey_original.js', 'joey_original_bg.wasm'}
+    runtime = {(name.removeprefix('games/joey/original/') if name.startswith('games/joey/original/') else Path(name).name): sha for name, sha in version['runtimeSources'].items()}
+    expected = set(version['previewFiles'])
     if set(revision['files']) != expected:
         raise RuntimeError('Unexpected site file: private or unrelated files cannot be packaged')
     files = {}
     for name, sha in revision['files'].items():
-        if Path(name).name != name or checksum(args.program_root / name) != sha:
+        if name.startswith('/') or '..' in Path(name).parts or checksum(args.program_root / name) != sha or sha != version['previewFiles'][name]:
             raise RuntimeError('Site checksum mismatch: ' + name)
         if name in runtime and sha != runtime[name]:
             raise RuntimeError('Runtime differs from the accepted source: ' + name)
@@ -62,7 +62,7 @@ def main():
         if checksum(index) != descriptor['manifestSHA256']:
             raise RuntimeError('Resource index mismatch: ' + key)
         files['packs/' + descriptor['pack']['sha256'] + '/resources.gzip.pack'] = pack
-    for name in ['LICENSE', 'THIRD_PARTY_NOTICES.md', 'GAME-CONTENT-NOTICE.md', 'version.json', 'docs/LOCAL-DEPLOYMENT.md', 'docs/BUILD.md', 'docs/DEPLOY.md', 'docs/RESOURCE-PACKS.md',
+    for name in ['README.md', 'CHANGELOG.md', 'docs/VERIFICATION.md', 'docs/verification-v0.3.0.json', 'games/joey/reverse/CUSTOM_CARDS.md', 'LICENSE', 'THIRD_PARTY_NOTICES.md', 'GAME-CONTENT-NOTICE.md', 'version.json', 'docs/LOCAL-DEPLOYMENT.md', 'docs/BUILD.md', 'docs/DEPLOY.md', 'docs/RESOURCE-PACKS.md',
                  'games/joey/reverse/brotli-decoder-NOTICE.txt', 'games/joey/reverse/font-atlas-copyright.txt',
                  'games/joey/reverse/font-atlas-Apache-2.0.txt', 'games/joey/reverse/brotli-decoder-provenance.json']:
         files[name] = ROOT / name

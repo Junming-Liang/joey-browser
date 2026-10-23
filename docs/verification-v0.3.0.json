@@ -1,0 +1,30 @@
+{
+  "version": "0.3.0",
+  "runtimeVersion": "20261023-030815-0a794efc",
+  "date": "2026-10-23",
+  "sourceChecks": "npm test passed; syntax, source identities, resource pacing, PCM, deployment restore, module regressions, real local WebSocket, rollback failure injection",
+  "runtimeDifferentialTests": 13,
+  "relayIntegrationChecks": 134,
+  "dynamic": {
+    "chromium": "Cactus summon -> one theme event -> native YOU WIN -> Cactus reward -> checksum-valid save -> restart",
+    "webkit": "public voice subtitles; Herbal Tea activation -> observed theme DOM event -> native YOU WIN",
+    "publicNetwork": "trusted HTTPS/WSS; Chromium and WebKit host/join/janken/deal/reciprocal turns; no browser or network errors",
+    "cache": "warm original common data and custom compressed overlay reused without resource network requests"
+  },
+  "notVerified": [
+    "physical phone acceptance",
+    "every special summon/negation UI combination",
+    "complete network victory and reward flow",
+    "every card effect"
+  ],
+  "production": {
+    "single": "https://106.12.148.75:8443/joey/original/",
+    "online": "https://106.12.148.75:8443/joey/online-preview/",
+    "unrelatedServicesPreserved": true
+  },
+  "security": {
+    "gitleaksFindings": 0,
+    "playerSavesPublished": false,
+    "productionCredentialsPublished": false
+  }
+}

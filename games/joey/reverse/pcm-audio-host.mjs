@@ -32,6 +32,12 @@ export async function createOriginalAudioHost(memory, workletUrl, report) {
   };
   return {
     resumeOutput,
+    getPlaybackClock(id) {
+      const stream=streams.get(id);
+      if(!stream||stream.failed||context.state==='closed')return null;
+      return {readFrame:Atomics.load(stream.header,0)>>>0,writeFrame:Atomics.load(stream.header,1)>>>0,
+        sampleRate:context.sampleRate,running:context.state==='running'&&Atomics.load(stream.header,3)!==0};
+    },
     create_audio_stream(rate, channels) {
       if (rate !== context.sampleRate || ![1, 2].includes(channels)) throw Error('Unsupported original PCM format');
       const capacity = 8192, buffer = new SharedArrayBuffer(16 + capacity * channels * 2);

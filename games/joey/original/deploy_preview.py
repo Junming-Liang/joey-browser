@@ -4,8 +4,11 @@ import argparse,gzip,hashlib,json,os,pwd,shutil,socket,ssl,subprocess,tarfile,te
 from pathlib import Path
 
 PREVIEW_FILES={'index.html','app.mjs','style.css','browser-host.mjs','original-worker.mjs','player-files.mjs','collection-patch.mjs','collection-catalog.mjs','resource-cache.mjs','resource-reader.mjs','server.mjs','range-reader.mjs','pcm-audio-host.mjs','pcm-worklet.js','packed-resource-reader.mjs','resource-byte-filter.mjs','structured-byte-filter.mjs','resources.manifest.json','joey_original.js','joey_original_bg.wasm','resource-layout.mjs','brotli-block-decoder.mjs','brotli-decoder-worker.mjs','brotli-decoder.mjs','brotli-decoder.wasm','legacy-resources.manifest.json','original-resources.manifest.json'}
+NETWORK_VENDOR_FILES={'vendor/ws/index.js', 'vendor/ws/lib/subprotocol.js', 'vendor/ws/lib/sender.js', 'vendor/ws/lib/permessage-deflate.js', 'vendor/ws/package.json', 'vendor/ws/lib/buffer-util.js', 'vendor/ws/lib/websocket-server.js', 'vendor/ws/provenance.json', 'vendor/ws/lib/limiter.js', 'vendor/ws/lib/constants.js', 'vendor/ws/lib/receiver.js', 'vendor/ws/lib/stream.js', 'vendor/ws/browser.js', 'vendor/ws/README.md', 'vendor/ws/lib/websocket.js', 'vendor/ws/lib/validation.js', 'vendor/ws/lib/event-target.js', 'vendor/ws/LICENSE', 'vendor/ws/wrapper.mjs', 'vendor/ws/lib/extension.js'}
+PREVIEW_FILES.update({'network-packet-policy.mjs','network-host.mjs','network-relay.mjs'}|NETWORK_VENDOR_FILES)
+PREVIEW_FILES.update({'collectible-effects.mjs','subtitles.mjs','subtitle-catalog.mjs','custom-resources.mjs','custom-resources.json','custom-resources.bin','custom-resources.bin.gz'})
 PREVIEW_MEMBERS=PREVIEW_FILES|{'revision.json','joey_original_bg.wasm.gz','NOTICE.txt'}
-EXPECTED_WASM='9b3d37007d31af4db92674061306ba7a57c2d848a5aab964a8736b6fbf13481e'
+EXPECTED_WASM='a15be57a015b1ae2e1560774dc38616b0b5e521f8db933de397d9ee9b0e1c605'
 PACK_SHA='5554c09969b2bc03233198843b977174f4b3468cae19cb6c9f3d0b0da10275dc'
 PACK_BYTES=179562757
 ORIGINAL_SHA='722216f76a656d878246f6cd4337fde2f9f37895670e54e3a02639c35d6e6ef9'
@@ -68,7 +71,7 @@ def unpack_preview(archive,checksum,release):
         release.mkdir(parents=True,exist_ok=False)
         try:
             package.extractall(release,members=entries,filter='data')
-            for path in release.iterdir():path.chmod(0o644)
+            for path in release.rglob('*'):path.chmod(0o755 if path.is_dir() else 0o644)
             release.chmod(0o755)
             revision=json.loads((release/'revision.json').read_text())
             if set(revision['files'])!=PREVIEW_FILES:raise RuntimeError('Preview file allowlist mismatch')

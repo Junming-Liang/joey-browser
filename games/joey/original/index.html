@@ -1,14 +1,17 @@
 <!doctype html>
 <html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><title>城之内原版 · 修复预览</title><link rel="stylesheet" href="./style.css"></head>
 <body>
-<header><strong>城之内原版 · 修复预览</strong><span id="version">正在检查版本</span></header>
+<header><strong id="game-title">城之内原版 · 修复预览</strong><span id="version">正在检查版本</span></header>
 <main id="game">
 <div id="launch"><p id="download-size">横屏后点击启动。默认只准备常用资源，未缓存内容后续按需下载，再次启动复用本机缓存。游戏声音会在启动后开启。</p><p>点击对应位置操作，按住卡片可拖动。右键按钮会作用于最后点击的位置。</p>
+<fieldset id="network-options" hidden><legend>游戏方式</legend><label for="network-mode">选择模式</label><select id="network-mode"><option value="single">单人游戏</option><option value="host">创建好友房间</option><option value="join">加入好友房间</option></select><div id="room-option" hidden><label id="room-label" for="room-code">好友邀请码</label><input id="room-code" maxlength="10" pattern="[A-Z2-7]{10}" autocapitalize="characters" autocomplete="off" autocorrect="off" spellcheck="false" aria-describedby="network-help"><button id="copy-invite" type="button" hidden>复制邀请码</button><button id="renew-invite" type="button" hidden>换一个邀请码</button></div><p id="network-help">单人游戏无需好友连接。</p></fieldset>
 <details id="collection-options"><summary>全卡解锁与全部 45 套卡组</summary><label><input id="unlock-cards" type="checkbox" checked> 解锁原版全部 771 种卡片，每种至少 3 张</label><label for="preset-deck">启动时使用的卡组</label><select id="preset-deck"><option value="">自动（首次使用补血削血）</option></select><p id="collection-status">全部卡组会安装到游戏内“卡组编辑 → 读取”列表，之后可随时切换。</p><button id="restore-collection" type="button" disabled>恢复解锁前存档</button><button id="restore-deck" type="button" disabled>恢复切换前卡组</button></details>
 <label><input id="complete-resources" type="checkbox"> <span id="complete-label">启动前安装完整压缩资源</span></label>
 <label id="resource-quality-option" hidden>完整资源画质 <select id="complete-quality" disabled><option value="light">轻量（卡图与声音轻度压缩）</option><option value="original">原画原声</option></select></label><p id="complete-quality-note" hidden></p><button id="start" disabled>准备中</button></div>
-<div id="game-surface" aria-label="原版游戏画面"></div>
+<div id="game-surface" aria-label="原版游戏画面"><div id="subtitles" hidden aria-label="中英双语字幕"><div id="subtitle-zh" lang="zh-CN"></div><div id="subtitle-en" lang="en"></div></div></div>
 <aside id="game-tools" aria-label="游戏辅助操作与运行信息">
+<details id="game-settings"><summary>设置</summary><label><input id="subtitles-enabled" type="checkbox"> 中英双语字幕</label><p>跟随城之内语音显示，可随时开关。</p></details>
+<details id="network-session" hidden><summary id="network-status">等待原版联机操作</summary><p id="network-instructions"></p><p>邀请码：<strong id="active-room"></strong></p><button id="copy-active-room" type="button">复制邀请码</button></details>
 <div id="loading" hidden><label id="loading-label" for="loading-progress">准备游戏</label><progress id="loading-progress" aria-labelledby="loading-label"></progress></div>
 <p id="status" role="status">修复预览，尚未完成全部功能验证</p><button id="copy-error" hidden>复制运行信息</button>
 <details id="startup-details" hidden><summary>查看运行信息</summary><pre id="startup-report"></pre></details>

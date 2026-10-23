@@ -7,7 +7,7 @@ import {createHash} from 'node:crypto';
 const {chromium,webkit}=createRequire(import.meta.url)('playwright');
 const out=resolve('.bridge/joey-web/reverse/output/compression-20261013'),root=resolve(out,'../original-preview');
 const revision=JSON.parse(await readFile(root+'/revision.json')),manifest=JSON.parse(await readFile(root+'/resources.manifest.json'));
-const url=process.argv[2]||(process.env.JOEY_PUBLIC_URL||'http://127.0.0.1:18891/joey/original/');
+const url=process.argv[2]||'https://106.12.148.75:8443/joey/original/';
 const reads=[],hash=b=>createHash('sha256').update(b).digest('hex');
 for(const path of ['/data.dat','/Voice.dat']){
  const b=manifest.blocks.find(b=>b.path===path&&b.sha256!==b.sourceSHA256),offset=b.start+63,length=4096;

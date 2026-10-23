@@ -1,11 +1,37 @@
 const element=id=>document.getElementById(id),base=new URL('./',import.meta.url);
 const getSession=async()=>{const response=await fetch(new URL('api/session',base),{cache:'no-store'});if(!response.ok)throw Error('无法读取游戏信息');return response.json();};
-let host,profile,Host,collection,catalog,lastFailure,startupTimer,launchStarted;const surface=element('game-surface');
+let host,profile,Host,collection,catalog,lastFailure,startupTimer,launchStarted,networkSelection={mode:'single'},hostRoom='';const surface=element('game-surface');
+const roomPattern=/^[A-Z2-7]{10}$/;
+try{element('subtitles-enabled').checked=localStorage.getItem('joey-original-subtitles')==='on';}catch{}
+element('subtitles-enabled').onchange=()=>{const enabled=element('subtitles-enabled').checked;try{localStorage.setItem('joey-original-subtitles',enabled?'on':'off');}catch{}host?.setSubtitlesEnabled(enabled);};
+function showSubtitle(caption){element('subtitle-zh').textContent=caption.zh;element('subtitle-en').textContent=caption.en;element('subtitles').hidden=!caption.visible;}
+const networkInstructions={host:'把邀请码发给好友。启动后进入原版“对战模式”，选择“本机PC的数据”，确认玩家名字，再选“主机”，等待好友加入。',join:'启动后进入原版“对战模式”，选择“本机PC的数据”，确认玩家名字，再选“客机”。点击列表中的好友名字即可加入；好友需要先选择“主机”。'};
+function makeRoomCode(){const alphabet='ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';return Array.from(crypto.getRandomValues(new Uint8Array(10)),byte=>alphabet[byte&31]).join('');}
+function updateNetworkChoice(){
+ const mode=element('network-mode').value,room=element('room-code');
+ element('room-option').hidden=mode==='single';room.readOnly=mode==='host';room.required=mode==='join';room.setCustomValidity('');
+ element('copy-invite').hidden=element('renew-invite').hidden=mode!=='host';
+ element('room-label').textContent=mode==='host'?'你的好友邀请码':'输入好友发来的 10 位邀请码';
+ if(mode==='host'){hostRoom||=makeRoomCode();room.value=hostRoom;}else room.value='';
+ element('network-help').textContent=mode==='single'?'单人游戏无需好友连接。':networkInstructions[mode]+' 此处仅设置邀请码，尚未建立连接。';
+}
+element('network-mode').onchange=updateNetworkChoice;
+element('renew-invite').onclick=()=>{hostRoom=makeRoomCode();updateNetworkChoice();};
+element('room-code').oninput=()=>{element('room-code').value=element('room-code').value.toUpperCase().replace(/\s/g,'');element('room-code').setCustomValidity('');};
+async function copyRoom(button,room){try{await navigator.clipboard.writeText(room);button.textContent='已复制邀请码';}catch{button.textContent='请选中邀请码复制';}setTimeout(()=>{button.textContent='复制邀请码';},2500);}
+element('copy-invite').onclick=()=>copyRoom(element('copy-invite'),hostRoom);
+element('copy-active-room').onclick=()=>copyRoom(element('copy-active-room'),networkSelection.room);
+function updateNetworkStatus(){
+ if(networkSelection.mode==='single')return;
+ const labels={ready:'等待原版建房或搜索',connecting:'正在联系好友房间服务',hosting:'原版房间已创建，等待好友加入',searching:'原版正在搜索好友房间',found:'已找到房间，请在原版中选择加入','not-found':'尚未找到房间，正在等待好友建房',joining:'原版正在加入好友房间',connected:'双方已通过原版连接',disconnected:'好友连接已结束，请退出原版联机后重试',closed:'游戏已退出，好友连接已关闭',disabled:'尚未建立好友连接'};
+ element('network-status').textContent=host?.probe.network?.lastErrorReason||labels[host?.probe.network?.state]||'等待原版建房或搜索';
+}
 function rememberUnlock(){try{localStorage.setItem('joey-original-unlock-cards',element('unlock-cards').checked?'on':'off');}catch{}}
 element('unlock-cards').onchange=rememberUnlock;
-const startupLabels={'creating-host':'准备运行环境','starting-audio':'启动声音','preloading-resources':'准备游戏资源','loading-saves':'读取浏览器存档','loading-program':'请求原版程序','downloading-program':'下载原版程序','compiling-program':'编译原版程序','instantiated':'运行原版程序'};
-function failureReport(){const canvas=surface.querySelector('canvas'),rect=canvas?.getBoundingClientRect();return {version:element('version').textContent,browser:navigator.userAgent,viewport:[innerWidth,innerHeight],environment:{secureContext:isSecureContext,isolated:crossOriginIsolated,sharedMemory:typeof SharedArrayBuffer==='function'},failure:lastFailure,diagnostics:host?.probe.diagnostics,stages:host?.probe.stages,renders:host?.probe.renders,renderTiming:host?.probe.renderTiming,drawTiming:host?.probe.drawTiming,elapsedMs:launchStarted?Math.round(performance.now()-launchStarted):null,canvas:canvas?{intrinsic:[canvas.width,canvas.height],display:[rect.x,rect.y,rect.width,rect.height]}:null,audio:host?.probe.audio,resourceStats:host?.probe.resourceStats,resourceCache:host?.probe.resourceCache,resourcePreload:host?.probe.resourcePreload,recentResourceReads:host?.probe.resourceReads.slice(-20),programProgress:host?.probe.programProgress,programDownload:host?.probe.programDownload,input:host?{queued:host.probe.inputQueued,consumed:host.probe.inputConsumed,last:host.probe.lastInput}:null,lastHostCall:host?.probe.calls.at(-1)};}
+const startupLabels={'creating-host':'准备运行环境','starting-audio':'启动声音','loading-custom-cards':'准备原创卡片','preloading-resources':'准备游戏资源','loading-saves':'读取浏览器存档','loading-program':'请求原版程序','downloading-program':'下载原版程序','compiling-program':'编译原版程序','instantiated':'运行原版程序'};
+function failureReport(){const canvas=surface.querySelector('canvas'),rect=canvas?.getBoundingClientRect();return {version:element('version').textContent,browser:navigator.userAgent,viewport:[innerWidth,innerHeight],environment:{secureContext:isSecureContext,isolated:crossOriginIsolated,sharedMemory:typeof SharedArrayBuffer==='function'},failure:lastFailure,diagnostics:host?.probe.diagnostics,stages:host?.probe.stages,renders:host?.probe.renders,renderTiming:host?.probe.renderTiming,drawTiming:host?.probe.drawTiming,elapsedMs:launchStarted?Math.round(performance.now()-launchStarted):null,canvas:canvas?{intrinsic:[canvas.width,canvas.height],display:[rect.x,rect.y,rect.width,rect.height]}:null,audio:host?.probe.audio,subtitles:host?.probe.subtitles,customResources:host?.probe.customResources,network:host?.probe.network,resourceStats:host?.probe.resourceStats,resourceCache:host?.probe.resourceCache,resourcePreload:host?.probe.resourcePreload,recentResourceReads:host?.probe.resourceReads.slice(-20),programProgress:host?.probe.programProgress,programDownload:host?.probe.programDownload,input:host?{queued:host.probe.inputQueued,consumed:host.probe.inputConsumed,last:host.probe.lastInput}:null,lastHostCall:host?.probe.calls.at(-1)};}
 function updateStartupProgress(){
+  updateNetworkStatus();
   if(lastFailure)return;
   const seconds=Math.floor((performance.now()-launchStarted)/1000),phase=host?.probe.stages.at(-1)?.stage||'creating-host';
   const stats=host?.probe.resourceStats;
@@ -16,7 +42,9 @@ function updateStartupProgress(){
   progress.removeAttribute('value');
   let text;
   const preload=host?.probe.resourcePreload;
-  if(phase==='preloading-resources'&&preload?.total>0){
+  if(phase==='loading-custom-cards'&&host?.probe.customResources?.total>0){
+    const custom=host.probe.customResources;progress.max=custom.total;progress.value=custom.completed;text='正在准备原创卡片 '+Math.floor(custom.completed/custom.total*100)+'%'+(custom.restoredBytes?'（复用本机缓存）':'');
+  }else if(phase==='preloading-resources'&&preload?.total>0){
     progress.max=preload.total;progress.value=preload.completed;
     if(preload.phase==='verifying'){
       progress.max=preload.totalBlocks;progress.value=preload.verifiedBlocks;
@@ -42,15 +70,17 @@ function updateStartupProgress(){
     text='正在读取'+(drawing?'对局':'游戏')+'资源，已读取 '+(((stats?.downloadedBytes||0)+(stats?.diskCacheBytes||0))/1048576).toFixed(1)+' MB'+(stats?.diskCacheHits?'（含本机缓存）':'');
   }else text='正在'+(startupLabels[phase]||'准备游戏画面');
   element('loading-label').textContent=text;
-  element('status').textContent=drawing&&!reading?'原版画面已开始绘制；完整对局和手机流畅度仍在验证。':text+'，已等待 '+(drawing?Math.max(0,Math.floor((Date.now()-(waiting?.startedAt||Date.now()))/1000)):seconds)+' 秒。';
+  element('status').textContent=drawing&&!reading?'游戏运行中。':text+'，已等待 '+(drawing?Math.max(0,Math.floor((Date.now()-(waiting?.startedAt||Date.now()))/1000)):seconds)+' 秒。';
   if(element('startup-details').open)element('startup-report').textContent=JSON.stringify(failureReport(),null,2);
 }
-function fitCanvas(){const canvas=surface.querySelector('canvas');if(!canvas)return;const scale=Math.min(surface.clientWidth/canvas.width,surface.clientHeight/canvas.height);canvas.style.width=Math.floor(canvas.width*scale)+'px';canvas.style.height=Math.floor(canvas.height*scale)+'px';}
+function fitCanvas(){const canvas=surface.querySelector('canvas');if(!canvas)return;const scale=Math.min(surface.clientWidth/canvas.width,surface.clientHeight/canvas.height);const width=Math.floor(canvas.width*scale),height=Math.floor(canvas.height*scale);canvas.style.width=width+'px';canvas.style.height=height+'px';surface.style.setProperty('--canvas-width',width+'px');surface.style.setProperty('--canvas-bottom',Math.max(0,(surface.clientHeight-height)/2)+'px');}
 new ResizeObserver(fitCanvas).observe(surface);new MutationObserver(fitCanvas).observe(surface,{childList:true});
 function status(data){
+  updateNetworkStatus();
   if(['failed','host-failed','worker-error'].includes(data.stage)){
     document.body.classList.remove('playing');
     lastFailure=data;clearInterval(startupTimer);element('loading').hidden=true;element('startup-details').hidden=true;element('copy-error').hidden=false;element('copy-error').textContent='复制错误信息';
+    if(String(data.error).includes('收藏卡仅限单人游戏')){element('launch').hidden=false;element('start').disabled=false;}
     const phase=startupLabels[data.startupPhase]||(host?.probe.renders?'运行游戏':'启动游戏');
     element('status').textContent=phase+'失败：'+String(data.error).slice(0,600)+'。可复制错误信息反馈。';
     element('failure-details').hidden=false;element('failure-report').textContent=JSON.stringify(failureReport(),null,2);
@@ -63,6 +93,8 @@ function status(data){
 }
 async function prepare(session){
   element('version').textContent='版本 '+session.version;
+  if(session.network?.enabled===true){document.title='城之内原版 · 好友对战预览';element('game-title').textContent=document.title;}
+  element('network-options').hidden=session.network?.enabled!==true;
   const quality=element('complete-quality');
   const selectedPack=()=>quality.value==='original'&&session.originalPackedResources?session.originalPackedResources:session.packedResources;
   const updateQuality=()=>{
@@ -91,6 +123,11 @@ async function prepare(session){
     element('restore-collection').disabled=false;element('restore-deck').disabled=false;
   }catch(error){element('start').textContent='当前环境无法启动';status({stage:'host-failed',startupPhase:'creating-host',error:String(error),stack:error.stack});console.error(error);return;}
   element('start').onclick=()=>{
+    const mode=session.network?.enabled===true?element('network-mode').value:'single',room=element('room-code').value;
+    if(mode!=='single'&&!roomPattern.test(room)){element('room-code').setCustomValidity('请输入 10 位邀请码，只使用大写字母 A–Z 和数字 2–7');element('room-code').reportValidity();return;}
+    networkSelection=mode==='single'?{mode}:{mode,room};
+    element('network-session').hidden=mode==='single';
+    if(mode!=='single'){element('active-room').textContent=room;element('network-instructions').textContent=networkInstructions[mode];}
     launchStarted=performance.now();element('copy-error').hidden=false;element('startup-details').hidden=false;
     startupTimer=setInterval(updateStartupProgress,1000);
     element('start').disabled=true;element('launch').hidden=true;
@@ -98,12 +135,12 @@ async function prepare(session){
     try{
       const unlock=element('unlock-cards').checked,deckId=element('preset-deck').value;
       const descriptor=selectedPack(),previous=(session.legacyPackedResources||[]).filter(file=>file.pack.sha256!==descriptor?.pack.sha256);
-      host=Host({manifest:session.resources,program:session.program,packedResources:descriptor,legacyPackedResources:previous,preloadMode:element('complete-resources').checked?'complete':'common',baseURL:base,container:surface,onStatus:status,claimProfile:()=>profile.acquireWriter(),loadFiles:async signal=>{
+      host=Host({manifest:session.resources,program:session.program,packedResources:descriptor,legacyPackedResources:previous,customResources:session.customResources,subtitlesEnabled:element('subtitles-enabled').checked,onSubtitle:showSubtitle,preloadMode:element('complete-resources').checked?'complete':'common',baseURL:base,networkSelection,networkProtocolIdentity:session.network?.protocolIdentity,container:surface,onStatus:status,claimProfile:()=>profile.acquireWriter(),loadFiles:async signal=>{
         const check=()=>{if(signal.aborted)throw new DOMException('游戏启动已取消','AbortError');};check();
         if(deckId&&!unlock)throw Error('使用全卡预设卡组时，请同时勾选全卡解锁');
         if(unlock)await profile.patch('before-unlock',files=>collection.applyCollectionPatch(files,catalog,{unlock:true}));
         check();
-        await profile.patch('before-deck',files=>collection.applyCollectionPatch(files,catalog,{unlock,deckId,installDecks:true}));
+        await profile.patch('before-deck',files=>{const next=collection.applyCollectionPatch(files,catalog,{unlock,deckId,installDecks:true});if(mode!=='single')collection.assertOnlineDeck(next);return next;});
         check();
         return collection.withProfileKey(await profile.load());
       },saveFile:(path,bytes)=>profile.save(path,bytes)});

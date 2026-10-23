@@ -4,7 +4,7 @@
 
 **在浏览器中运行《游戏王：混沌力量 · 城之内篇》的原版程序**
 
-WebAssembly 本机执行 · 原版界面与 AI · 手机触控 · 按需资源与断点续传
+WebAssembly 本机执行 · 原版界面与 AI · 手机触控 · 好友联机 · 双语字幕 · 收藏卡
 
 [![Source checks](https://github.com/Junming-Liang/joey-browser/actions/workflows/checks.yml/badge.svg?branch=main)](https://github.com/Junming-Liang/joey-browser/actions/workflows/checks.yml)
 [![GitHub release](https://img.shields.io/github/v/release/Junming-Liang/joey-browser)](https://github.com/Junming-Liang/joey-browser/releases)
@@ -45,6 +45,9 @@ Joey Browser 为固定版本的城之内汉化程序提供浏览器兼容运行�
 - **按需资源**：先准备常用资源，其他素材随游戏读取，也可选择安装完整资源。
 - **缓存与续传**：程序、资源及未完成的下载分段保存在本机，重新打开时复用已有内容。
 - **卡组与存档**：全卡解锁、预设卡组、收藏／卡组备份恢复，以及多标签独占写入保护。
+- **好友联机**：通过房间码邀请两名玩家，保留原版界面和规则；服务器转发原版消息。
+- **双语字幕**：设置中开启后，跟随实际语音同时显示中文和英文，默认关闭。
+- **收藏卡**：凉茶、年糕、大葱、猴子、仙人掌；胜利奖励只从五张中抽取。成功发动或召唤后播放主题特殊胜利演出，只能用于单人游戏。
 - **运行诊断**：下载进度、缓存、渲染和声音状态可查看、复制和反馈。
 
 ## 快速开始
@@ -68,7 +71,7 @@ Joey Browser 为固定版本的城之内汉化程序提供浏览器兼容运行�
 | 应用内置网页／WebView | 可能未开放共享内存；请复制链接到独立浏览器，或选择应用菜单的“在浏览器中打开” |
 | 直接打开本地 HTML | 请使用匹配的 HTTP／HTTPS 网关，环境要求见 [部署指南](docs/DEPLOY.md) |
 
-当前入口提供与电脑 AI 的单人游戏，玩家之间的联网决斗尚未实现。项目绑定固定游戏输入；其他 EXE、资源版本和浏览器环境需要单独验证。
+[原入口](https://106.12.148.75:8443/joey/original/)提供电脑 AI 单人游戏；[好友联机入口](https://106.12.148.75:8443/joey/online-preview/)支持房间码邀请。收藏卡需要从主卡组、副卡组及融合卡组移除后才能联机。项目绑定固定游戏输入；其他 EXE、资源版本和浏览器环境需要单独验证。
 
 ## 资源与存档
 
@@ -80,7 +83,7 @@ Joey Browser 为固定版本的城之内汉化程序提供浏览器兼容运行�
 | **完整轻量资源** | 资源包约 180 MB，另需共用程序约 16 MB | 缩小完整安装体积，减少后续资源请求 |
 | **完整原画原声** | 资源包约 228 MB，另需共用程序约 16 MB | 使用无损资源包 |
 
-MB 使用十进制。首启数字是固定常用片段的压缩估算，并非所有网络及缓存条件下的实测下载量。完整资源和程序分开计数；精确大小、索引与解码器开销见 [资源包说明](docs/RESOURCE-PACKS.md#测量口径) 和 [version.json](version.json)。
+MB 使用十进制。首启数字是固定常用片段的压缩估算，并非所有网络及缓存条件下的实测下载量。五张收藏卡另需约 1.1 MB 压缩增量，复用原资源缓存；完整资源和程序分开计数；精确大小、索引与解码器开销见 [资源包说明](docs/RESOURCE-PACKS.md#测量口径) 和 [version.json](version.json)。
 
 轻量档只对卡图和声音采样做声明范围内的有损处理，界面、文字、字体、卡背、遮罩及声音采样率、声道和时长保持原样。资源下载支持续传，完整安装完成前会逐块校验持久化数据；已有完整旧资源可以继续复用。
 
@@ -98,12 +101,12 @@ MB 使用十进制。首启数字是固定常用片段的压缩估算，并非�
 
 在 [Releases](https://github.com/Junming-Liang/joey-browser/releases) 确认对应版本实际提供的附件。`joey-browser-<版本>-complete.tar.gz` 及其校验文件属于完整部署包；GitHub 自动生成的 **Source code** 和 `*-source.zip` 均为源码包。如果发布版本只提供源码，请按下一节自行构建。
 
-以下以 v0.2.1 完整归档为例。目标环境为 Linux、Node.js 22 及以上，并需要 `tar` 和 `sha256sum`：
+以下以 v0.3.0 完整归档为例。目标环境为 Linux、Node.js 22 及以上，并需要 `tar` 和 `sha256sum`：
 
 ```sh
-sha256sum -c joey-browser-v0.2.1-complete.tar.gz.sha256
-tar -xzf joey-browser-v0.2.1-complete.tar.gz
-cd joey-browser-v0.2.1-local
+sha256sum -c joey-browser-v0.3.0-complete.tar.gz.sha256
+tar -xzf joey-browser-v0.3.0-complete.tar.gz
+cd joey-browser-v0.3.0-local
 node site/setup-deployment.mjs --origin https://game.example.com
 JOEY_ORIGINAL_CONFIG="$PWD/config.local.json" \
   node --max-old-space-size=64 site/server.mjs
@@ -117,10 +120,16 @@ JOEY_ORIGINAL_CONFIG="$PWD/config.local.json" \
 
 ```sh
 python3 scripts/package-deployment.py \
-  --output .bridge/joey-browser-v0.2.1-complete.tar.gz
+  --output .bridge/joey-browser-v0.3.0-complete.tar.gz
 ```
 
 构建器核对原始输入、程序、网页文件与资源包身份，生成部署归档及同名 `.sha256` 文件。输入清单、路径参数和安装步骤见 [LOCAL-DEPLOYMENT.md](docs/LOCAL-DEPLOYMENT.md)；内容许可边界见 [游戏内容声明](GAME-CONTENT-NOTICE.md)。
+
+## 字幕与收藏卡
+
+启动前或运行中展开 **设置**，勾选 **中英双语字幕**。字幕跟随实际播放的城之内语音。
+
+收藏卡不会随原版 771 种全卡解锁自动发放，需通过获胜奖励收集。凉茶成功结算、四张怪兽成功通常／特殊／反转召唤时播放各自主题演出，并进入原版胜利结算；盖放、召唤或效果被无效不触发。浏览器、运行时及服务器共同拒绝收藏卡进入联机。详见 [收藏卡实现与验证](games/joey/reverse/CUSTOM_CARDS.md)。
 
 ## 工作原理
 

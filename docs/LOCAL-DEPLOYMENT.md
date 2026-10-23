@@ -49,3 +49,9 @@ JOEY_ORIGINAL_CONFIG="$PWD/config.local.json" \
 此包用于新建独立服务；更新已有服务仍按 [DEPLOY.md](DEPLOY.md) 的升级与回滚流程操作，保留被旧浏览器缓存引用的历史资源包。
 
 完整部署包存放的是服务器运行内容，不等于手机的资源安装下载。手机仍默认按需读取，完整轻量安装和原画原声的下载范围保持原样。
+
+## v0.3.0 字幕、收藏卡与联网
+
+完整包包含新 WebAssembly、WebSocket 依赖和收藏卡增量，默认提供单人模式。全新部署设置时可加 `--network` 开启好友联机，并使用 nginx 示例中的 WebSocket 路由；已有配置请先备份，再显式设置 `network: true`。代理需保留 HTTPS、COOP／COEP 与 Upgrade 请求头。
+
+不要让游戏脚本继承只适用于低频 API 的请求限额。游戏入口应有足够的并行请求突发容量。原项目现有联机服务可使用 `update_preview.py --online-preview` 更新；单人入口使用默认参数，保留旧发布目录以便回滚。

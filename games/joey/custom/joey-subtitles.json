@@ -1,0 +1,586 @@
+[
+  {
+    "voiceId": 1,
+    "en": "Joey Wheeler doesn't take a backseat to nobody! It's time to duel!",
+    "zh": "城之内才不会输给任何人！来决斗吧！",
+    "reviewed": true,
+    "sourceSHA256": "ffa8681dfa5c3e7e56ebbb2b97af92ad27e80a31cc44adc9705dc210c55c4ab0",
+    "reviewMethod": "two local ASR models, contextual review and original card-name tables; clip 60 is an intentionally nonverbatim sound description"
+  },
+  {
+    "voiceId": 2,
+    "en": "Come and bring it! I'll take you on any time, any place!",
+    "zh": "尽管来吧！无论何时何地，我都奉陪！",
+    "reviewed": true,
+    "sourceSHA256": "53981f2294b11a5f98f63cc9857c43a176ad5b45ec9f6d337b9595f8146ba557",
+    "reviewMethod": "two local ASR models, contextual review and original card-name tables; clip 60 is an intentionally nonverbatim sound description"
+  },
+  {
+    "voiceId": 3,
+    "en": "Listen up, a true duelist doesn't back off from nobody, cause only cowards don't stand up to a challenge. You better come strong, cause it's time to duel!",
+    "zh": "听好了，真正的决斗者不会向任何人退缩，只有胆小鬼才不敢接受挑战。拿出真本事吧，决斗开始！",
+    "reviewed": true,
+    "sourceSHA256": "1580fcf9ce7705a9dc23099347fdb1bbefadeb4bf385589b9668554d715102dc",
+    "reviewMethod": "two local ASR models, contextual review and original card-name tables; clip 60 is an intentionally nonverbatim sound description"
+  },
+  {
+    "voiceId": 4,
+    "en": "Alright! With this, victory's in the bag!",
+    "zh": "好！这样就胜券在握了！",
+    "reviewed": true,
+    "sourceSHA256": "3392c5feed75b407bc8c23fafcbf3504177ff04e5291cd58ed29e405a70fd59a",
+    "reviewMethod": "two local ASR models, contextual review and original card-name tables; clip 60 is an intentionally nonverbatim sound description"
+  },
+  {
+    "voiceId": 5,
+    "en": "This card used to be one of my opponent's precious cards!",
+    "zh": "这张卡以前可是对手的宝贝！",
+    "reviewed": true,
+    "sourceSHA256": "8b6c075a6cacd49e74543242f32911ae5b870ea7df57cfba838e80ee42a42e6a",
+    "reviewMethod": "two local ASR models, contextual review and original card-name tables; clip 60 is an intentionally nonverbatim sound description"
+  },
+  {
+    "voiceId": 6,
+    "en": "Yeah! This is the card I've been waiting for!",
+    "zh": "好耶！这就是我一直在等的卡！",
+    "reviewed": true,
+    "sourceSHA256": "f1cf32b50ce9a52c5ac66560670322045634164696062ce487e144b763176638",
+    "reviewMethod": "two local ASR models, contextual review and original card-name tables; clip 60 is an intentionally nonverbatim sound description"
+  },
+  {
+    "voiceId": 7,
+    "en": "I offer two of my monsters on the field as a tribute!",
+    "zh": "我将场上的两只怪兽作为祭品！",
+    "reviewed": true,
+    "sourceSHA256": "5ce7e0d48cff8e3c2c19db43faf67efdc3b44dc4820599332cbfceeb3acfa12c",
+    "reviewMethod": "two local ASR models, contextual review and original card-name tables; clip 60 is an intentionally nonverbatim sound description"
+  },
+  {
+    "voiceId": 8,
+    "en": "I offer my monster as a tribute!",
+    "zh": "我将这只怪兽作为祭品！",
+    "reviewed": true,
+    "sourceSHA256": "a1589c60b4d5ef9de8f977799119652d8e25e510272b3881cd3db277aec44bfa",
+    "reviewMethod": "two local ASR models, contextual review and original card-name tables; clip 60 is an intentionally nonverbatim sound description"
+  },
+  {
+    "voiceId": 9,
+    "en": "I summon my Red-Eyes B. Dragon!",
+    "zh": "我召唤真·红眼黑龙！",
+    "reviewed": true,
+    "sourceSHA256": "9d7bdb7230ed7979f34400608d6d5e924d1d8f2406e7a35e317824f293dfd45c",
+    "reviewMethod": "two local ASR models, contextual review and original card-name tables; clip 60 is an intentionally nonverbatim sound description"
+  },
+  {
+    "voiceId": 10,
+    "en": "I summon Insect Queen!",
+    "zh": "我召唤昆虫女王！",
+    "reviewed": true,
+    "sourceSHA256": "04bde6e63a77c326e1044f6a23b88c4d43123b1c913fe2bc7efc30f08f286bdd",
+    "reviewMethod": "two local ASR models, contextual review and original card-name tables; clip 60 is an intentionally nonverbatim sound description"
+  },
+  {
+    "voiceId": 11,
+    "en": "I summon Jinzo!",
+    "zh": "我召唤人造人·索加！",
+    "reviewed": true,
+    "sourceSHA256": "175cb836be6e75acc9ce6b234b04ece9a15fa0c30b32e440e86bf242c35f0b6c",
+    "reviewMethod": "two local ASR models, contextual review and original card-name tables; clip 60 is an intentionally nonverbatim sound description"
+  },
+  {
+    "voiceId": 12,
+    "en": "Okay, I offer two monsters as a tribute!",
+    "zh": "好，我将两只怪兽作为祭品！",
+    "reviewed": true,
+    "sourceSHA256": "6209ba4c384d7cf59a4839b264f8e01bec138847b0a95502eb7340018b08d7ee",
+    "reviewMethod": "two local ASR models, contextual review and original card-name tables; clip 60 is an intentionally nonverbatim sound description"
+  },
+  {
+    "voiceId": 13,
+    "en": "And fusion!",
+    "zh": "然后，融合！",
+    "reviewed": true,
+    "sourceSHA256": "fc40718ec2df53d8e0f1548c236ff3b6a26aa7d0d58b0b69416216c141d94f4c",
+    "reviewMethod": "two local ASR models, contextual review and original card-name tables; clip 60 is an intentionally nonverbatim sound description"
+  },
+  {
+    "voiceId": 14,
+    "en": "As a thousand years pass by, my legendary dragon becomes smarter and stronger. I summon Thousand Dragon!",
+    "zh": "历经千年，我的传说之龙变得更加聪明、更加强大。我召唤千年龙！",
+    "reviewed": true,
+    "sourceSHA256": "d27d6997a21fa065f4931ef2c0ee9ea1645517b4073b3f8b095ee3fcd33c806b",
+    "reviewMethod": "two local ASR models, contextual review and original card-name tables; clip 60 is an intentionally nonverbatim sound description"
+  },
+  {
+    "voiceId": 15,
+    "en": "Hold on a sec, I'm gonna activate this!",
+    "zh": "等一下，我要发动这张卡！",
+    "reviewed": true,
+    "sourceSHA256": "585ff561cc3a271b571a80d6682038103f78c3ebec625b3d085d138d56c23a42",
+    "reviewMethod": "two local ASR models, contextual review and original card-name tables; clip 60 is an intentionally nonverbatim sound description"
+  },
+  {
+    "voiceId": 16,
+    "en": "I ain't gonna get taken down that easy!",
+    "zh": "我可不会这么轻易被打倒！",
+    "reviewed": true,
+    "sourceSHA256": "710dcb56952f5b595832c5b4c777f4827e7105b31633c7ac1551a596aa10bf1d",
+    "reviewMethod": "two local ASR models, contextual review and original card-name tables; clip 60 is an intentionally nonverbatim sound description"
+  },
+  {
+    "voiceId": 17,
+    "en": "Ta-da! I activate my handy-dandy Kunai with Chain! My monster's attack points increase by 500 points!",
+    "zh": "看招！发动我的好帮手，锁链回旋镖！我的怪兽攻击力上升500点！",
+    "reviewed": true,
+    "sourceSHA256": "0a32ac88a6a8106fb539829f6f954a205b42a917b6ccd650156aad6e455dc23e",
+    "reviewMethod": "two local ASR models, contextual review and original card-name tables; clip 60 is an intentionally nonverbatim sound description"
+  },
+  {
+    "voiceId": 18,
+    "en": "Heh heh heh heh!",
+    "zh": "嘿嘿嘿嘿！",
+    "reviewed": true,
+    "sourceSHA256": "d17c0343a17ccc037623418823c2718b0f5866d55dbf854bb25574404f86e94f",
+    "reviewMethod": "two local ASR models, contextual review and original card-name tables; clip 60 is an intentionally nonverbatim sound description"
+  },
+  {
+    "voiceId": 19,
+    "en": "Haha, I was waiting for you to do that!",
+    "zh": "哈哈，我就等着你这么做呢！",
+    "reviewed": true,
+    "sourceSHA256": "9a1d5265401723294db8f60949fabaa8c1d745e7ad02e057930a99f12303cda7",
+    "reviewMethod": "two local ASR models, contextual review and original card-name tables; clip 60 is an intentionally nonverbatim sound description"
+  },
+  {
+    "voiceId": 20,
+    "en": "Ha! I don't mean to brag, but my skills are perfect!",
+    "zh": "哈！不是我吹牛，我的技术可是无懈可击！",
+    "reviewed": true,
+    "sourceSHA256": "1637f246b3c96fb952715af5bce289f5594a282abb9824c70d7471db469ef390",
+    "reviewMethod": "two local ASR models, contextual review and original card-name tables; clip 60 is an intentionally nonverbatim sound description"
+  },
+  {
+    "voiceId": 21,
+    "en": "Oh no! What am I going to do? It's all over! Just kidding! I activate my trap!",
+    "zh": "糟了！怎么办？全完了！……骗你的！我发动陷阱！",
+    "reviewed": true,
+    "sourceSHA256": "122fb4120f8fdc299779b25026a80bb0b030d87af939b85ae303647f7cd50b93",
+    "reviewMethod": "two local ASR models, contextual review and original card-name tables; clip 60 is an intentionally nonverbatim sound description"
+  },
+  {
+    "voiceId": 22,
+    "en": "I activate my spell card!",
+    "zh": "我发动魔法卡！",
+    "reviewed": true,
+    "sourceSHA256": "d7554b3ec365445a5c10b4a6d224018192a4a09082d9dbbc7a75f2a00439879d",
+    "reviewMethod": "two local ASR models, contextual review and original card-name tables; clip 60 is an intentionally nonverbatim sound description"
+  },
+  {
+    "voiceId": 23,
+    "en": "Dark Hole!",
+    "zh": "黑洞！",
+    "reviewed": true,
+    "sourceSHA256": "12d6b0d6c1e9be5b778bb9674d0e3a687dcf716ed4ec89322543a1937be86feb",
+    "reviewMethod": "two local ASR models, contextual review and original card-name tables; clip 60 is an intentionally nonverbatim sound description"
+  },
+  {
+    "voiceId": 24,
+    "en": "Change of Heart!",
+    "zh": "心变！",
+    "reviewed": true,
+    "sourceSHA256": "b4a6f5e35380798af65a1dad751155eed9d35b2aa30d8b4337dc2921f39e8e47",
+    "reviewMethod": "two local ASR models, contextual review and original card-name tables; clip 60 is an intentionally nonverbatim sound description"
+  },
+  {
+    "voiceId": 25,
+    "en": "Monster Reborn!",
+    "zh": "死者苏生！",
+    "reviewed": true,
+    "sourceSHA256": "8fe9081b22896c77d2917695806271f3d1e4cdba8747a96394bcb8726685f7f0",
+    "reviewMethod": "two local ASR models, contextual review and original card-name tables; clip 60 is an intentionally nonverbatim sound description"
+  },
+  {
+    "voiceId": 26,
+    "en": "Trap Hole!",
+    "zh": "落穴！",
+    "reviewed": true,
+    "sourceSHA256": "1c031694b872c658ba95d4e8e91234ea0fd7731336f7a9486754c8b88167add4",
+    "reviewMethod": "two local ASR models, contextual review and original card-name tables; clip 60 is an intentionally nonverbatim sound description"
+  },
+  {
+    "voiceId": 27,
+    "en": "I activate Mirror Force!",
+    "zh": "我发动圣光防护镜！",
+    "reviewed": true,
+    "sourceSHA256": "4995936dd362ccd8035d432a4feb8918c4db4beff0f191706a7f02a3716e2b29",
+    "reviewMethod": "two local ASR models, contextual review and original card-name tables; clip 60 is an intentionally nonverbatim sound description"
+  },
+  {
+    "voiceId": 28,
+    "en": "Chain!",
+    "zh": "连锁！",
+    "reviewed": true,
+    "sourceSHA256": "697ab1c548bf2632a86a822c232b3f07b034ae70637c7a133b0c1a78cf9fe52e",
+    "reviewMethod": "two local ASR models, contextual review and original card-name tables; clip 60 is an intentionally nonverbatim sound description"
+  },
+  {
+    "voiceId": 29,
+    "en": "I'll just go along and set this card here. Let me give you a little hint. You better be careful, because this card's a trap.",
+    "zh": "我就把这张卡盖在这里。给你个提示：你最好小心点，因为这是一张陷阱卡！",
+    "reviewed": true,
+    "sourceSHA256": "634667dc879e7e0d7900829bde04cc94449ac132a69144c4bc8f79977e637724",
+    "reviewMethod": "two local ASR models, contextual review and original card-name tables; clip 60 is an intentionally nonverbatim sound description"
+  },
+  {
+    "voiceId": 30,
+    "en": "I end my turn!",
+    "zh": "我的回合结束！",
+    "reviewed": true,
+    "sourceSHA256": "7866ec58365a639eca23710e406951ccec086119c55255a37692ffe65be70700",
+    "reviewMethod": "two local ASR models, contextual review and original card-name tables; clip 60 is an intentionally nonverbatim sound description"
+  },
+  {
+    "voiceId": 31,
+    "en": "I'm gonna resurrect the monster from the graveyard!",
+    "zh": "我要让墓地里的怪兽复活！",
+    "reviewed": true,
+    "sourceSHA256": "f726df7adb262d91078e3e321bf1d1e01c26144dee293e380870a44aa319f84f",
+    "reviewMethod": "two local ASR models, contextual review and original card-name tables; clip 60 is an intentionally nonverbatim sound description"
+  },
+  {
+    "voiceId": 32,
+    "en": "It feels so good to snatch victory from the jaws of defeat!",
+    "zh": "绝境翻盘的感觉真是太棒了！",
+    "reviewed": true,
+    "sourceSHA256": "9142c429b726ddd3bcfe5108732b85bad36d2867c37fbf32c025f1af3e2056af",
+    "reviewMethod": "two local ASR models, contextual review and original card-name tables; clip 60 is an intentionally nonverbatim sound description"
+  },
+  {
+    "voiceId": 33,
+    "en": "Ugh!",
+    "zh": "呃！",
+    "reviewed": true,
+    "sourceSHA256": "b04b3270e252a8d54b554b0b1542442f74117b51474fb5d420fda1a283e0fe4b",
+    "reviewMethod": "two local ASR models, contextual review and original card-name tables; clip 60 is an intentionally nonverbatim sound description"
+  },
+  {
+    "voiceId": 34,
+    "en": "Oh no!",
+    "zh": "糟了！",
+    "reviewed": true,
+    "sourceSHA256": "72332e3e65aa89c7f188ab010ae08c6c0cd4a658f6243b9d84cec6165c01632a",
+    "reviewMethod": "two local ASR models, contextual review and original card-name tables; clip 60 is an intentionally nonverbatim sound description"
+  },
+  {
+    "voiceId": 35,
+    "en": "Ah, not too shabby, but you ain't gonna beat me with those lame attacks!",
+    "zh": "啊，还不赖。不过就凭这些没劲的攻击，你可赢不了我！",
+    "reviewed": true,
+    "sourceSHA256": "cbc140ff388aaf7c3e826209fb6e9f673906349df9f94aa6b5fbcc3c488d72eb",
+    "reviewMethod": "two local ASR models, contextual review and original card-name tables; clip 60 is an intentionally nonverbatim sound description"
+  },
+  {
+    "voiceId": 36,
+    "en": "Whoa! Man, that was close! Too close!",
+    "zh": "哇，真险！太险了！",
+    "reviewed": true,
+    "sourceSHA256": "bf5fcdade5768ce1bd75b5e8db079051254715163448f7a958d601e91faa3c53",
+    "reviewMethod": "two local ASR models, contextual review and original card-name tables; clip 60 is an intentionally nonverbatim sound description"
+  },
+  {
+    "voiceId": 37,
+    "en": "Ah! I better think of something fast. I'm running out of options.",
+    "zh": "啊！得赶快想个办法，我已经没多少选择了。",
+    "reviewed": true,
+    "sourceSHA256": "72d073a0b136c462c492d3ac79f31d7298a8ba8f73267803c7037b2b099c4bb6",
+    "reviewMethod": "two local ASR models, contextual review and original card-name tables; clip 60 is an intentionally nonverbatim sound description"
+  },
+  {
+    "voiceId": 38,
+    "en": "YEAH!",
+    "zh": "好耶！",
+    "reviewed": true,
+    "sourceSHA256": "b334b709974c358fc2d777cdd3c903cbf4d0d28e4b01c7748ea0268d3a64681c",
+    "reviewMethod": "two local ASR models, contextual review and original card-name tables; clip 60 is an intentionally nonverbatim sound description"
+  },
+  {
+    "voiceId": 39,
+    "en": "I'm changing it to attack position!",
+    "zh": "我把它变成攻击表示！",
+    "reviewed": true,
+    "sourceSHA256": "c056ebc85a24e11df96aba1edca323da2484276668f48b34ad6b80d219a870cd",
+    "reviewMethod": "two local ASR models, contextual review and original card-name tables; clip 60 is an intentionally nonverbatim sound description"
+  },
+  {
+    "voiceId": 40,
+    "en": "I'm switching it to defense position!",
+    "zh": "我把它变成守备表示！",
+    "reviewed": true,
+    "sourceSHA256": "59f0cd03894b5cf41f4e8ac90724a7cef0ae9aa726d8592d94fbd0742aada5cb",
+    "reviewMethod": "two local ASR models, contextual review and original card-name tables; clip 60 is an intentionally nonverbatim sound description"
+  },
+  {
+    "voiceId": 41,
+    "en": "Flip Summon!",
+    "zh": "反转召唤！",
+    "reviewed": true,
+    "sourceSHA256": "5b07b551f3e1bd28a3b3e2e762b512f42c8b7c7e771bedeb180f8dc901db4410",
+    "reviewMethod": "two local ASR models, contextual review and original card-name tables; clip 60 is an intentionally nonverbatim sound description"
+  },
+  {
+    "voiceId": 42,
+    "en": "Flip!",
+    "zh": "反转！",
+    "reviewed": true,
+    "sourceSHA256": "cb0cb1a2c48671fc45361f46075f95485da70e85d14dbdac6d1f648b48fd4336",
+    "reviewMethod": "two local ASR models, contextual review and original card-name tables; clip 60 is an intentionally nonverbatim sound description"
+  },
+  {
+    "voiceId": 43,
+    "en": "Ha ha! Your attack triggered my effect!",
+    "zh": "哈哈！你的攻击触发了我的效果！",
+    "reviewed": true,
+    "sourceSHA256": "2d6ceb82371f8589113d401895de0a66f70f371ff8de5de0528948382722726a",
+    "reviewMethod": "two local ASR models, contextual review and original card-name tables; clip 60 is an intentionally nonverbatim sound description"
+  },
+  {
+    "voiceId": 44,
+    "en": "The effect's gonna activate at the same time.",
+    "zh": "效果将在同时发动。",
+    "reviewed": true,
+    "sourceSHA256": "83939c26cad99be3a46a9762704fb1ae1c5bb43523bb10b209f1d7b0abac74f3",
+    "reviewMethod": "two local ASR models, contextual review and original card-name tables; clip 60 is an intentionally nonverbatim sound description"
+  },
+  {
+    "voiceId": 45,
+    "en": "My field spell card activates!",
+    "zh": "我的场地魔法卡发动了！",
+    "reviewed": true,
+    "sourceSHA256": "5130929211830299bd781c42de699c7069498a3904d7a27f81367a7b02411840",
+    "reviewMethod": "two local ASR models, contextual review and original card-name tables; clip 60 is an intentionally nonverbatim sound description"
+  },
+  {
+    "voiceId": 46,
+    "en": "No way! A trap?!",
+    "zh": "不会吧！陷阱？！",
+    "reviewed": true,
+    "sourceSHA256": "b9d89e4a13106a7f3752c00548f4aebfb4c6779d1f6408e008a7e1d134f241a4",
+    "reviewMethod": "two local ASR models, contextual review and original card-name tables; clip 60 is an intentionally nonverbatim sound description"
+  },
+  {
+    "voiceId": 47,
+    "en": "Uh-oh, this looks bad.",
+    "zh": "糟了，情况不妙。",
+    "reviewed": true,
+    "sourceSHA256": "45f8542d7bde6d9a0e1517839372dafd0415e72bb3868630789779faade5409e",
+    "reviewMethod": "two local ASR models, contextual review and original card-name tables; clip 60 is an intentionally nonverbatim sound description"
+  },
+  {
+    "voiceId": 48,
+    "en": "You're gonna tribute summon?",
+    "zh": "你要进行祭品召唤？",
+    "reviewed": true,
+    "sourceSHA256": "5ed4ca432a33d7a367e45e9bea56afc970b71190e44b7758d69e58030d149e97",
+    "reviewMethod": "two local ASR models, contextual review and original card-name tables; clip 60 is an intentionally nonverbatim sound description"
+  },
+  {
+    "voiceId": 49,
+    "en": "A special summon?",
+    "zh": "特殊召唤？",
+    "reviewed": true,
+    "sourceSHA256": "6ba398c93dae6522a2ef49caed957a61b7ee11ea7b346b03f89486e83f4e4f95",
+    "reviewMethod": "two local ASR models, contextual review and original card-name tables; clip 60 is an intentionally nonverbatim sound description"
+  },
+  {
+    "voiceId": 50,
+    "en": "No! A fusion!",
+    "zh": "什么！融合！",
+    "reviewed": true,
+    "sourceSHA256": "947baf019f5ecec586efc143fd701f8bc724cd5e7580ea587e057876e182e07e",
+    "reviewMethod": "two local ASR models, contextual review and original card-name tables; clip 60 is an intentionally nonverbatim sound description"
+  },
+  {
+    "voiceId": 51,
+    "en": "Yeah!",
+    "zh": "好！",
+    "reviewed": true,
+    "sourceSHA256": "a84231e23e7a3226d5a350656355cb7c72447c86926d51c83fc9a72ae66188ee",
+    "reviewMethod": "two local ASR models, contextual review and original card-name tables; clip 60 is an intentionally nonverbatim sound description"
+  },
+  {
+    "voiceId": 52,
+    "en": "What? Can't be!",
+    "zh": "什么？不可能！",
+    "reviewed": true,
+    "sourceSHA256": "aabc73b7807230dbd4a55ee5ca2ea601fb1686ea5aca99af6a5fa23acb3643f0",
+    "reviewMethod": "two local ASR models, contextual review and original card-name tables; clip 60 is an intentionally nonverbatim sound description"
+  },
+  {
+    "voiceId": 53,
+    "en": "Look, buddy, you gotta work harder and put yourself into the deck! Once you learn all about the heart of the cards, I can guarantee that you'll win!",
+    "zh": "听着，朋友，你得再努力一点，把自己的心投入卡组。等你领会卡片之心，我保证你一定能赢！",
+    "reviewed": true,
+    "sourceSHA256": "a6e5d5694fe99601a33d46c44a48d93143f88b4236557e265d9c8e2229cd9278",
+    "reviewMethod": "two local ASR models, contextual review and original card-name tables; clip 60 is an intentionally nonverbatim sound description"
+  },
+  {
+    "voiceId": 54,
+    "en": "Let me give you some advice. I didn't win cause I'm the number one duelist in the world. I won cause you stink.",
+    "zh": "给你个忠告：我赢可不是因为我是世界第一的决斗者，而是因为你太逊了。",
+    "reviewed": true,
+    "sourceSHA256": "4352c64c5e5290721cca7b3abcec60b66dd38ef14d878b166e724ec59a1e9c8c",
+    "reviewMethod": "two local ASR models, contextual review and original card-name tables; clip 60 is an intentionally nonverbatim sound description"
+  },
+  {
+    "voiceId": 55,
+    "en": "Duelist extraordinaire Joey Wheeler's battles have only just begun!",
+    "zh": "天才决斗者城之内的战斗才刚刚开始！",
+    "reviewed": true,
+    "sourceSHA256": "9d0b5ba65f3d1288aec76b9b7c00b34a578ae032368cbda761611c82fb960b39",
+    "reviewMethod": "two local ASR models, contextual review and original card-name tables; clip 60 is an intentionally nonverbatim sound description"
+  },
+  {
+    "voiceId": 56,
+    "en": "It's a tie. If you want to duel me again, name the time and place and I'll be there.",
+    "zh": "平局。如果你想再跟我决斗，时间地点随你定，我一定奉陪！",
+    "reviewed": true,
+    "sourceSHA256": "ef437b948049b0ac51cc7e0e27e30af4ec072c61107a626c7399f25ebf58cb31",
+    "reviewMethod": "two local ASR models, contextual review and original card-name tables; clip 60 is an intentionally nonverbatim sound description"
+  },
+  {
+    "voiceId": 57,
+    "en": "Hey, hey! Give me one more match! I know I can beat you this time!",
+    "zh": "喂，喂！再跟我打一场！这次我肯定能赢你！",
+    "reviewed": true,
+    "sourceSHA256": "8056bb471c6dd539fc21d5d7a4c17e050263cafef8b779d76d31e5deb05a2311",
+    "reviewMethod": "two local ASR models, contextual review and original card-name tables; clip 60 is an intentionally nonverbatim sound description"
+  },
+  {
+    "voiceId": 58,
+    "en": "Noooo!",
+    "zh": "不——！",
+    "reviewed": true,
+    "sourceSHA256": "24a9f9958d3a2894dfcb5cf0843a29df980543f7cc027b3611873ce89192769b",
+    "reviewMethod": "two local ASR models, contextual review and original card-name tables; clip 60 is an intentionally nonverbatim sound description"
+  },
+  {
+    "voiceId": 59,
+    "en": "Ah, man, I got totally whooped, but I'm never gonna quit as long as I got my whole future ahead of me.",
+    "zh": "唉，我输得真惨。但我绝不会放弃，前面还有大好未来等着我！",
+    "reviewed": true,
+    "sourceSHA256": "57ee1553dcf72458fd20035a0d773ff1dc9ec6a1095edce124ff89a708b7718a",
+    "reviewMethod": "two local ASR models, contextual review and original card-name tables; clip 60 is an intentionally nonverbatim sound description"
+  },
+  {
+    "voiceId": 60,
+    "en": "[Exclamation]",
+    "zh": "[呼喊]",
+    "reviewed": true,
+    "sourceSHA256": "a9e8cde0e17809619c8c9dd7e772ae91d51f71e74a14fb2b9450ac8f680258e3",
+    "reviewMethod": "two local ASR models, contextual review and original card-name tables; clip 60 is an intentionally nonverbatim sound description"
+  },
+  {
+    "voiceId": 61,
+    "en": "I'm gonna have to risk it all. I summon Time Wizard!",
+    "zh": "看来得赌上一切了。我召唤时间魔术师！",
+    "reviewed": true,
+    "sourceSHA256": "5d35e167c29857dc5f2eb91caea2682b2f11e6061fad33be3c1a67e8dfdd8002",
+    "reviewMethod": "two local ASR models, contextual review and original card-name tables; clip 60 is an intentionally nonverbatim sound description"
+  },
+  {
+    "voiceId": 62,
+    "en": "I summon Rocket Warrior!",
+    "zh": "我召唤火箭战士！",
+    "reviewed": true,
+    "sourceSHA256": "bea8e865b8900d9f7f54ded99def0d6a5eedd527e37ab2f096015a88bee27a76",
+    "reviewMethod": "two local ASR models, contextual review and original card-name tables; clip 60 is an intentionally nonverbatim sound description"
+  },
+  {
+    "voiceId": 63,
+    "en": "I summon Alligator's Sword!",
+    "zh": "我召唤威邦战士！",
+    "reviewed": true,
+    "sourceSHA256": "9fb3646dfdaba02b655a26721095dbba38571c60c2d27be4f9bc5a3f39a8b136",
+    "reviewMethod": "two local ASR models, contextual review and original card-name tables; clip 60 is an intentionally nonverbatim sound description"
+  },
+  {
+    "voiceId": 64,
+    "en": "I summon Panther Warrior!",
+    "zh": "我召唤漆黑的豹战士！",
+    "reviewed": true,
+    "sourceSHA256": "a358714326f3439c45fdc7bd4179ad592ca74905d5090e1d82d37c386d9c9234",
+    "reviewMethod": "two local ASR models, contextual review and original card-name tables; clip 60 is an intentionally nonverbatim sound description"
+  },
+  {
+    "voiceId": 65,
+    "en": "Say bye-bye to all your trap cards, 'cause I'm summoning Jinzo!",
+    "zh": "跟你的陷阱卡说再见吧，因为我要召唤人造人·索加！",
+    "reviewed": true,
+    "sourceSHA256": "3156670171744b913ceb9442c95e3e2cf17de31d450cdb484578eb2e0a3d2183",
+    "reviewMethod": "two local ASR models, contextual review and original card-name tables; clip 60 is an intentionally nonverbatim sound description"
+  },
+  {
+    "voiceId": 66,
+    "en": "I hope Lady Luck's on my side. I activate Graceful Dice!",
+    "zh": "希望幸运女神站在我这边。我发动天使骰子！",
+    "reviewed": true,
+    "sourceSHA256": "8be36260f0d03ff68c74fc0b13e9eaaf17701ffa6de5a6bcc15aa7a2f57d98fa",
+    "reviewMethod": "two local ASR models, contextual review and original card-name tables; clip 60 is an intentionally nonverbatim sound description"
+  },
+  {
+    "voiceId": 67,
+    "en": "I activate Scapegoat!",
+    "zh": "我发动替罪羔羊！",
+    "reviewed": true,
+    "sourceSHA256": "886fb7f933ce463dfe4b66ff8523f7598f44b0fd1df144f417d02f1ca3ab04ff",
+    "reviewMethod": "two local ASR models, contextual review and original card-name tables; clip 60 is an intentionally nonverbatim sound description"
+  },
+  {
+    "voiceId": 68,
+    "en": "This card's gonna turn the tables. Shield and Sword!",
+    "zh": "这张卡将扭转局势。攻防转换！",
+    "reviewed": true,
+    "sourceSHA256": "eabace56ab4a7d0a97bde964f5f14f078f4ed7fa021afa10a1b20d3ceb3cb2de",
+    "reviewMethod": "two local ASR models, contextual review and original card-name tables; clip 60 is an intentionally nonverbatim sound description"
+  },
+  {
+    "voiceId": 69,
+    "en": "Hahaha! You fell right into my trap! I activate Giant Trunade!",
+    "zh": "哈哈哈！你正好掉进我的圈套了！我发动热带低气压！",
+    "reviewed": true,
+    "sourceSHA256": "7f089b3aaec1f911ef5776bde289cd17bfb9e6b1ef359921136c728ab7078c58",
+    "reviewMethod": "two local ASR models, contextual review and original card-name tables; clip 60 is an intentionally nonverbatim sound description"
+  },
+  {
+    "voiceId": 70,
+    "en": "It's all or nothing. I activate Skull Dice!",
+    "zh": "成败在此一举。我发动恶魔骰子！",
+    "reviewed": true,
+    "sourceSHA256": "58b6258623db45b95ed62c8a45b178aee29b99eb8d8986e29c94c7ea66ede890",
+    "reviewMethod": "two local ASR models, contextual review and original card-name tables; clip 60 is an intentionally nonverbatim sound description"
+  },
+  {
+    "voiceId": 71,
+    "en": "Voila! I bet you didn't think I was going to activate this. Graverobber!",
+    "zh": "看吧！没想到我会发动这张卡吧？盗墓者！",
+    "reviewed": true,
+    "sourceSHA256": "bb83b7c977d8b61afd3de123d6e1283089640148c01b3a7205c4fb4b35d9e473",
+    "reviewMethod": "two local ASR models, contextual review and original card-name tables; clip 60 is an intentionally nonverbatim sound description"
+  },
+  {
+    "voiceId": 72,
+    "en": "Take this! I activate Magic Arm Shield!",
+    "zh": "接招！我发动魔法臂盾！",
+    "reviewed": true,
+    "sourceSHA256": "23301eb0a72f2104bb5ce45187458e9012aa2373075d1ef85d9088fa0455f379",
+    "reviewMethod": "two local ASR models, contextual review and original card-name tables; clip 60 is an intentionally nonverbatim sound description"
+  },
+  {
+    "voiceId": 74,
+    "en": "Oh, yeah! Copycat's effect activated! Now, which monster should I choose?",
+    "zh": "好耶！模仿幻想师的效果发动了！那么，该选哪只怪兽呢？",
+    "reviewed": true,
+    "sourceSHA256": "476efc5f97a0e0f634dc8a74d5d8c5421d07d8f700858295f96152d19ad373db",
+    "reviewMethod": "two local ASR models, contextual review and original card-name tables; clip 60 is an intentionally nonverbatim sound description"
+  }
+]

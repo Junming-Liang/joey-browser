@@ -71,3 +71,4 @@ cargo build --locked --manifest-path "$repo/Cargo.toml" -p tc
 python3 "$script_dir/prepare_translated.py" "$repo" "$audit"
 python3 "$script_dir/specialize_original_lzss.py" "$repo"
 python3 "$script_dir/specialize_original_copy.py" "$repo"
+python3 "$script_dir/specialize_custom_cards.py" "$repo"

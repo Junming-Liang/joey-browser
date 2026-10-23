@@ -11,3 +11,17 @@ location ^~ /joey/original/ {
     client_max_body_size 16k;
     gzip off;
 }
+
+# Optional: use with setup-deployment.mjs --network.
+location = /joey/original/api/network {
+    proxy_pass http://127.0.0.1:18891;
+    proxy_http_version 1.1;
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header Upgrade $http_upgrade;
+    proxy_set_header Connection "upgrade";
+    proxy_read_timeout 120s;
+    proxy_buffering off;
+}
+# Give game locations their own sufficiently generous request limiter if the
+# parent server enforces a low-frequency API limit.

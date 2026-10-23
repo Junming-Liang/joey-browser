@@ -46,3 +46,8 @@ WASM 内存段增加 32 MiB 线性内存上限；ESM 保持上游内容。该第
 目录包含原版兼容主题配置、经当前卡池校验的玩家经典配置和经典攻略配方。来源 URL、配方或 SHA 保留在 `collection-catalog.mjs`、`classic-burn-decks.json` 中。初始 profile 来自专用原程序测试生成的合成存档，不含真实玩家进度。原游戏内容仍属于各自权利人，不为第三方配置指定新的统一许可证。
 
 第三方内容的分发须遵循对应声明，不因本项目采用 MIT 而改变。
+
+## WebSocket relay and collectible content
+
+`games/joey/original/vendor/ws` vendors ws 8.21.3 under MIT, with its original LICENSE and file provenance.
+The five new illustrations were generated for this project. Rendered card faces reuse original game frame pixels and symbols; these original elements retain the original rights holder's terms and are not relicensed by MIT. Transcripts derive from original Joey voice recordings; original audio is not included in the source repository.

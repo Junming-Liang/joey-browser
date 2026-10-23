@@ -50,7 +50,7 @@ export async function restoreOriginalArchives(manifest,packPath,destination){
 }
 const exists=async path=>{try{await access(path);return true;}catch(error){if(error.code!=='ENOENT')throw error;return false;}};
 async function setup(){
- const {values}=parseArgs({options:{origin:{type:'string'},port:{type:'string',default:'18891'}}});
+ const {values}=parseArgs({options:{origin:{type:'string'},port:{type:'string',default:'18891'},network:{type:'boolean',default:false}}});
  const port=Number(values.port);if(!Number.isSafeInteger(port)||port<1||port>65535)throw Error('Invalid port');
  const root=resolve(dirname(fileURLToPath(import.meta.url)),'..'),origin=new URL(values.origin||'http://127.0.0.1:'+port);
  if(!['http:','https:'].includes(origin.protocol)||origin.username||origin.password||origin.pathname!=='/'||origin.search||origin.hash)throw Error('Origin must contain only scheme, host and optional port');
@@ -59,7 +59,7 @@ async function setup(){
  if(revision.wasmSHA256!==version.wasmSHA256||revision.programGzipSHA256!==version.programGzipSHA256)throw Error('Program identity mismatch');
  for(const [name,hash]of Object.entries(revision.files)){
   if(name==='joey_original_bg.wasm')continue;
-  if(!/^[a-zA-Z0-9_.-]+$/.test(name)||await fileHash(join(site,name))!==hash)throw Error('Site asset checksum mismatch: '+name);
+  if(!/^(?:vendor\/ws\/(?:lib\/)?[a-zA-Z0-9_.-]+|[a-zA-Z0-9_.-]+)$/.test(name)||await fileHash(join(site,name))!==hash)throw Error('Site asset checksum mismatch: '+name);
  }
  const exe=version.licensedOriginalInputs.find(f=>f.name==='joey_pc_cn.exe');if(await fileHash(join(root,'game',exe.name))!==exe.sha256)throw Error('Original executable checksum mismatch');
  const packs=join(root,'packs'),light=version.packedResources.pack,original=version.originalPackedResources.pack;
@@ -82,7 +82,7 @@ async function setup(){
   const temporary=await mkdtemp(join(root,'.program-')),output=join(temporary,'program.wasm');
   try{await pipeline(createReadStream(compressed),createGunzip(),createWriteStream(output,{flags:'wx'}));if((await stat(output)).size!==version.wasmBytes||await fileHash(output)!==version.wasmSHA256)throw Error('Restored program checksum mismatch');await link(output,wasm);}finally{await rm(temporary,{recursive:true,force:true});}
  }
- await writeFile(configPath,JSON.stringify({origin:origin.origin,port,filesRoot:site,resourcesRoot:resources,packedResourcesRoot:join(packs,light.sha256)},null,2)+'\n',{flag:'wx',mode:0o600});
+ await writeFile(configPath,JSON.stringify({origin:origin.origin,port,filesRoot:site,resourcesRoot:resources,packedResourcesRoot:join(packs,light.sha256),network:values.network},null,2)+'\n',{flag:'wx',mode:0o600});
  console.log('Setup complete. Start in this directory:');
  console.log('JOEY_ORIGINAL_CONFIG="$PWD/config.local.json" node --max-old-space-size=64 site/server.mjs');
 }

@@ -3,6 +3,10 @@ import {createOriginalResourceReader} from './resource-reader.mjs';
 import {createOriginalAudioHost} from './pcm-audio-host.mjs';
 import {createOriginalResourceCache} from './resource-cache.mjs';
 import {archiveLayouts,preloadAssets} from './resource-layout.mjs';
+import {createOriginalNetworkHost} from './network-host.mjs';
+import {createOriginalSubtitleHost} from './subtitles.mjs';
+import {createCollectibleEffects} from './collectible-effects.mjs';
+import {createCustomResourceReader} from './custom-resources.mjs';
 
 export function requireOriginalBrowserSupport(){
  const environment={secureContext:isSecureContext,isolated:crossOriginIsolated,sharedMemory:typeof SharedArrayBuffer==='function',browser:navigator.userAgent};
@@ -14,18 +18,23 @@ export function requireOriginalBrowserSupport(){
  return environment;
 }
 
-export function createOriginalBrowserHost({manifest,program,packedResources,legacyPackedResources=[],preloadMode='common',baseURL=new URL('./',import.meta.url),container=document.body,onStatus=()=>{},traceSpec='',claimProfile=async()=>{},loadFiles=async()=>[],saveFile=async()=>{}}){
+export function createOriginalBrowserHost({manifest,program,packedResources,legacyPackedResources=[],customResources,subtitlesEnabled=false,onSubtitle=()=>{},preloadMode='common',baseURL=new URL('./',import.meta.url),container=document.body,onStatus=()=>{},traceSpec='',networkSelection=null,networkProtocolIdentity,claimProfile=async()=>{},loadFiles=async()=>[],saveFile=async()=>{}}){
 if(!['common','complete'].includes(preloadMode))throw Error('Invalid original resource preparation mode');
 const probe = {stages: [], threads:[], calls: [], console: '', renders: 0, writes: [], windows: [], inputQueued:0,inputConsumed:0, launchArguments: ['-win','-e']};
 probe.environment=requireOriginalBrowserSupport();
 probe.programSource=program;
 probe.audio = {};
 probe.resourceCache={};const resourceCache=createOriginalResourceCache(probe.resourceCache);
-const reader = createOriginalResourceReader(manifest,{cache:resourceCache,layouts:archiveLayouts,packedResources,legacyPackedResources});
+const originalReader=createOriginalResourceReader(manifest,{cache:resourceCache,layouts:archiveLayouts,packedResources,legacyPackedResources});
+const reader=createCustomResourceReader(originalReader,{manifest,descriptor:customResources,baseURL,cache:resourceCache,onProgress:progress=>{probe.customResources=progress;}});
 probe.resourceReads = []; Object.defineProperty(probe,'resourceStats',{enumerable:true,get:()=>reader.stats});
 // 512 initial pages cover the original program and embedded native glyphs.
 const memory = new WebAssembly.Memory({initial: 512, maximum: 16384, shared: true});
-let closeAudio,resumeOutput,releaseProfile,shutdown,stopped=false;const startup=new AbortController();const surfaces = new Map(); let nextSurface = 1, gameWindow,framePixels;
+probe.collectibles={};const collectibleEffects=createCollectibleEffects({container,networkSelection,probe:probe.collectibles});
+probe.network={};
+const network=createOriginalNetworkHost({memory,baseURL,selection:networkSelection,probe:probe.network,protocolIdentity:networkProtocolIdentity});
+let closeAudio,resumeOutput,releaseProfile,shutdown,subtitles,stopped=false;const startup=new AbortController();const surfaces = new Map(); let nextSurface = 1, gameWindow,framePixels;
+const setSubtitlesEnabled=value=>{subtitlesEnabled=!!value;subtitles?.setEnabled(subtitlesEnabled);};
 probe.drawTiming={uploads:0,uploadMs:0,maxUploadMs:0,presents:0,presentMs:0,maxPresentMs:0};
 probe.surfaceStats={created:0,destroyed:0,live:0};
 const resumeAudio=()=>resumeOutput?resumeOutput():Promise.reject(Error('声音设备尚未准备好'));
@@ -86,12 +95,14 @@ const workers=new Set();
 const terminateWorkers=()=>{for(const worker of workers)worker.terminate();workers.clear();};
 const stop=()=>{
  if(shutdown)return shutdown;
- stopped=true;probe.stopped=true;startup.abort();terminateWorkers();reader.close();input.length=0;probe.surfaceStats.clearedOnStop=surfaces.size;surfaces.clear();probe.surfaceStats.live=0;framePixels=undefined;
+ stopped=true;probe.stopped=true;startup.abort();terminateWorkers();network.close();subtitles?.close();collectibleEffects.close();reader.close();input.length=0;probe.surfaceStats.clearedOnStop=surfaces.size;surfaces.clear();probe.surfaceStats.live=0;framePixels=undefined;
  if(inputWaiter){inputWaiter([-1]);inputWaiter=undefined;}
  shutdown=Promise.allSettled([closeAudio?.(),resourceCache.close(),releaseProfile?.()]).then(()=>{});return shutdown;
 };
 const fail=(stage,error,details={})=>{if(stopped)return;const data={...details,stage,error:String(error),startupPhase:probe.stages.at(-1)?.stage||'creating-host'};probe.stages.push(data);stop();onStatus(data);};
 const methods = {
+  network_call:network.network_call,
+  collectible_event:collectibleEffects.collectible_event,
   spawn_thread(task,module){
     if(!Number.isInteger(task)||task<=0||!(module instanceof WebAssembly.Module))throw Error('Invalid Worker task');
     const thread=createWorker();
@@ -167,7 +178,7 @@ function createWorker(){
   try {
     if (!methods[func]) throw Error('Unsupported browser host call: ' + func);
     const result = methods[func](...args);
-    if (retAddr) Promise.resolve(result).then(value => reply(retAddr, value)).catch(error => {
+    if (retAddr) Promise.resolve(result).then(value => {if(!stopped)reply(retAddr, value);}).catch(error => {
       if(!stopped)fail('host-failed',error);
     });
   } catch (error) { fail('host-failed',error); }
@@ -185,6 +196,9 @@ const start=async()=>{
     const audio = await createOriginalAudioHost(memory, new URL('pcm-worklet.js',baseURL).href, probe.audio);
     if(stopped){await audio.close();return;}
     Object.assign(methods, audio);closeAudio=audio.close;resumeOutput=audio.resumeOutput;
+    probe.subtitles={};subtitles=createOriginalSubtitleHost({audio,onChange:onSubtitle,enabled:subtitlesEnabled,probe:probe.subtitles});methods.subtitle_event=subtitles.subtitle_event;
+    if(customResources){probe.stages.push({stage:'loading-custom-cards'});onStatus({stage:'loading-custom-cards'});}
+    await reader.prepare();if(stopped)return;
     // AudioContext.resume is called in the user's gesture before lock I/O.
     const release=await claimProfile();if(stopped){await release?.();return;}releaseProfile=release;
     const cacheReady=await resourceCache.ready();if(stopped)return;
@@ -200,7 +214,7 @@ const start=async()=>{
     probe.stages.push({stage:'loading-saves'});onStatus({stage:'loading-saves'});
     const initialFiles=await loadFiles(startup.signal);if(stopped)return;
     probe.stages.push({stage:'loading-program'});onStatus({stage:'loading-program'});
-    worker.postMessage({memory,manifest,program,initialFiles,traceSpec});
+    worker.postMessage({memory,manifest:reader.manifest,program,initialFiles,traceSpec});
   } catch (error) {if(stopped)return;fail('host-failed',error);throw error;}
 };
 let typing=Promise.resolve();probe.textPending=0;probe.userInputPending=0;
@@ -226,5 +240,5 @@ const typeText=text=>{
  const task=typing.then(async()=>{try{for(const char of chars){if(stopped)break;const [key,upper]=textCodes.get(char),shift=key[1]>=65&&key[1]<=90?upper!==capsLock:upper;if(shift)enqueue([5,...keyCodes.ShiftLeft]);enqueue([5,...key]);await new Promise(done=>setTimeout(done,100));enqueue([6,...key]);if(shift)enqueue([6,...keyCodes.ShiftLeft]);await new Promise(done=>setTimeout(done,50));}}finally{probe.textPending-=chars.length;}});
  typing=task.catch(()=>{});return task;
 };
-return {probe,start,stop,pressKey,typeText,rightClick,resumeAudio};
+return {probe,start,stop,pressKey,typeText,rightClick,resumeAudio,setSubtitlesEnabled};
 }

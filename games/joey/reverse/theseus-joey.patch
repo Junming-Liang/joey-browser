@@ -408,10 +408,36 @@ index d25e3f2..7008d1a 100644
 +pub use imp::{mount, mount_external};
 +pub use imp::{File, create_dir, current_dir, exists, open, read_dir, remove_file, set_current_dir};
 diff --git a/host/src/sdl.rs b/host/src/sdl.rs
-index 0abfa86..f6b9a69 100644
+index 0abfa86..f8d9eff 100644
 --- a/host/src/sdl.rs
 +++ b/host/src/sdl.rs
-@@ -508,6 +508,18 @@ impl Host {
+@@ -33,6 +33,16 @@ pub struct Host {
+ }
+ 
+ impl Host {
++    pub fn collectible_event(&self, _internal: u32, _side: u32) {}
++    /// Browser-room networking is not a native DirectPlay wire implementation.
++    /// Native callers receive a normal unsupported HRESULT, not a fake session.
++    pub fn network_call(
++        &self, _peer: u32, _op: u32, _words: &[u32], _text: &str,
++        _data: &[u8], _response: &mut [u8],
++    ) -> (u32, usize) {
++        (0x80004001, 0)
++    }
++
+     pub fn new() -> Self {
+         let headless = std::env::var("THESEUS_HEADLESS").unwrap_or_default() != "";
+         Self {
+@@ -435,6 +445,8 @@ pub struct AudioStream(*mut sdl::audio::SDL_AudioStream);
+ unsafe impl Send for AudioStream {}
+ 
+ impl AudioStream {
++    pub fn subtitle_event(&self, _kind: u32, _voice: u16, _instance: u32, _frame: u32) {}
++
+     /// False when the host has no audio device. Callers should skip producing
+     /// audio entirely rather than mixing into nothing.
+     pub fn is_open(&self) -> bool {
+@@ -508,6 +520,18 @@ impl Host {
          unsafe { sdl::timer::SDL_GetTicks() as u32 }
      }
  
@@ -431,7 +457,7 @@ index 0abfa86..f6b9a69 100644
          use std::io::Write;
          std::io::stdout().write_all(text).unwrap();
 diff --git a/host/src/wasm.rs b/host/src/wasm.rs
-index 92da1ea..7332fc1 100644
+index 92da1ea..5c20d4a 100644
 --- a/host/src/wasm.rs
 +++ b/host/src/wasm.rs
 @@ -1,31 +1,40 @@
@@ -499,7 +525,7 @@ index 92da1ea..7332fc1 100644
          Window { id }
      }
  
-@@ -48,43 +53,55 @@ impl Window {
+@@ -48,88 +53,222 @@ impl Window {
      }
  
      pub fn resize(&mut self, width: u32, height: u32) {
@@ -563,6 +589,14 @@ index 92da1ea..7332fc1 100644
 +        let args = js_sys::Array::new();
 +        args.push(&JsValue::from(self.id));
 +        assert_eq!(host::host().chan.send_sync("audio_stream_resume", args), 1);
++    }
++    pub fn subtitle_event(&self, kind: u32, voice: u16, instance: u32, frame: u32) {
++        let args = js_sys::Array::new();
++        for value in [self.id as u32, kind, voice as u32, instance, frame] {
++            args.push(&JsValue::from(value));
++        }
++        // Captions observe playback; they never wait for or re-enter the guest.
++        host::host().chan.send_async("subtitle_event", args);
      }
  }
  
@@ -575,7 +609,13 @@ index 92da1ea..7332fc1 100644
  }
  
  impl Host {
-@@ -92,42 +109,116 @@ impl Host {
++    pub fn collectible_event(&self, internal: u32, side: u32) {
++        let args = js_sys::Array::new();
++        args.push(&JsValue::from(internal));
++        args.push(&JsValue::from(side));
++        self.chan.send_sync("collectible_event", args);
++    }
+     pub fn new() -> Self {
          std::panic::set_hook(Box::new(console_error_panic_hook::hook));
  
          Host {
@@ -661,7 +701,7 @@ index 92da1ea..7332fc1 100644
      pub fn persist_file(&self, path: &str, data: &[u8]) {
 -        self.chan.lock().unwrap().write_file(path, data);
 +        self.chan.write_file(path, data);
-     }
++    }
 +
 +    pub fn read_external_file(
 +        &self,
@@ -670,6 +710,40 @@ index 92da1ea..7332fc1 100644
 +        data: &mut [u8],
 +    ) -> std::io::Result<usize> {
 +        self.chan.read_file(path, offset, data)
++    }
++
++    /// A bounded DirectPlay operation. The page owns network deadlines and
++    /// completes this RPC once; an HRESULT of zero is not the completion flag.
++    /// These are host-owned slices, never retained guest stack pointers.
++    pub fn network_call(
++        &self,
++        peer: u32,
++        op: u32,
++        words: &[u32],
++        text: &str,
++        data: &[u8],
++        response: &mut [u8],
++    ) -> (u32, usize) {
++        if words.len() > 16 || text.len() > 128 || data.len() > 65568 || response.len() > 65568 {
++            return (0x80070057, 0);
++        }
++        let args = js_sys::Array::new();
++        args.push(&JsValue::from(peer));
++        args.push(&JsValue::from(op));
++        let parameters = js_sys::Array::new();
++        for word in words { parameters.push(&JsValue::from(*word)); }
++        args.push(&parameters);
++        args.push(&JsValue::from_str(text));
++        args.push(&JsValue::from(data.as_ptr() as u32));
++        args.push(&JsValue::from(data.len()));
++        args.push(&JsValue::from(response.as_mut_ptr() as u32));
++        args.push(&JsValue::from(response.len()));
++        let mut result = [0i32; 3];
++        self.chan.send_sync_buf("network_call", args, &mut result);
++        if result[0] != 1 || result[2] < 0 || result[2] as usize > response.len() {
++            return (0x80004005, 0);
++        }
++        (result[1] as u32, result[2] as usize)
 +    }
 +
 +    pub fn spawn_thread(&self, task: impl FnOnce() + Send + 'static) -> std::io::Result<()> {
@@ -688,9 +762,9 @@ index 92da1ea..7332fc1 100644
 +            }
 +            Err(std::io::Error::other("browser Worker creation failed"))
 +        }
-+    }
-+}
-+
+     }
+ }
+ 
 +type WorkerTask = Box<dyn FnOnce() + Send + 'static>;
 +
 +/// Private host entry: only a task allocated by spawn_thread may be supplied.
@@ -699,10 +773,12 @@ index 92da1ea..7332fc1 100644
 +    assert_ne!(pointer, 0);
 +    let task = unsafe { Box::from_raw(pointer as *mut WorkerTask) };
 +    task();
- }
- 
++}
++
  /// Add a file to the program's filesystem. The page calls this for each file
-@@ -137,6 +228,11 @@ pub fn mount_file(path: &str, data: &[u8]) {
+ /// of the program's data before starting it.
+ #[wasm_bindgen]
+@@ -137,6 +276,11 @@ pub fn mount_file(path: &str, data: &[u8]) {
      crate::fs::mount(path, data.to_vec());
  }
  
@@ -714,7 +790,7 @@ index 92da1ea..7332fc1 100644
  /// Set the directory the program starts in, the equivalent of launching it
  /// from that directory natively.
  #[wasm_bindgen]
-@@ -157,9 +253,11 @@ export interface Msg {
+@@ -157,9 +301,11 @@ export interface Msg {
  }
  
  export interface WasmHost {
@@ -727,7 +803,7 @@ index 92da1ea..7332fc1 100644
  
      create_window(title: string, width: number, height: number): number;
      resize_window(window_id: number, width: number, height: number): void;
-@@ -168,6 +266,13 @@ export interface WasmHost {
+@@ -168,6 +314,14 @@ export interface WasmHost {
      set_pixels(surface_id: number, ptr: number, len: number): void;
  
      write_file(path: string, ptr: number, len: number): number;
@@ -738,10 +814,11 @@ index 92da1ea..7332fc1 100644
 +    audio_stream_queued_bytes(id: number): number[];
 +    audio_stream_put_data(id: number, ptr: number, len: number): number;
 +    audio_stream_resume(id: number): Promise<number>;
++    subtitle_event(id: number, kind: number, voice: number, instance: number, frame: number): number;
  
      poll_message(): number[];
      wait_message(): Promise<number[]>;
-@@ -184,21 +289,21 @@ impl WebHostSendChannel {
+@@ -184,21 +338,21 @@ impl WebHostSendChannel {
          Self {}
      }
  
@@ -769,7 +846,7 @@ index 92da1ea..7332fc1 100644
          let args = js_sys::Array::new();
          args.push(&JsValue::from(title));
          args.push(&JsValue::from(width));
-@@ -206,7 +311,7 @@ impl WebHostSendChannel {
+@@ -206,7 +360,7 @@ impl WebHostSendChannel {
          self.send_sync("create_window", args)
      }
  
@@ -778,7 +855,7 @@ index 92da1ea..7332fc1 100644
          let args = js_sys::Array::new();
          args.push(&JsValue::from(id));
          args.push(&JsValue::from(width));
-@@ -214,14 +319,14 @@ impl WebHostSendChannel {
+@@ -214,14 +368,14 @@ impl WebHostSendChannel {
          self.send_async("resize_window", args);
      }
  
@@ -795,7 +872,7 @@ index 92da1ea..7332fc1 100644
          let args = js_sys::Array::new();
          args.push(&JsValue::from(path));
          args.push(&JsValue::from(data.as_ptr() as u32));
-@@ -229,7 +334,23 @@ impl WebHostSendChannel {
+@@ -229,7 +383,23 @@ impl WebHostSendChannel {
          self.send_sync("write_file", args);
      }
  
@@ -820,7 +897,7 @@ index 92da1ea..7332fc1 100644
          let args = js_sys::Array::new();
          args.push(&JsValue::from(id));
          args.push(&JsValue::from(pixels.as_ptr() as u32));
-@@ -280,32 +401,35 @@ impl WebHostSendChannel {
+@@ -280,32 +450,35 @@ impl WebHostSendChannel {
          })
      }
  
@@ -1696,10 +1773,10 @@ index 4d80652..5c2b10c 100644
                      instr.memory_index_scale()
                  ));
 diff --git a/tc/src/lib.rs b/tc/src/lib.rs
-index d13fb54..a2185cc 100644
+index d13fb54..e9fbdea 100644
 --- a/tc/src/lib.rs
 +++ b/tc/src/lib.rs
-@@ -206,12 +206,13 @@ impl State {
+@@ -206,12 +206,14 @@ impl State {
              unreachable!()
          };
          let mut addr = 0; // only set up if vtables are needd
@@ -1708,6 +1785,7 @@ index d13fb54..a2185cc 100644
              ("ddraw", winapi::ddraw::VTABLES.as_slice()),
              ("dsound", winapi::dsound::VTABLES.as_slice()),
              ("dinput", winapi::dinput::VTABLES.as_slice()),
++            ("dplay8", winapi::dplay8::VTABLES.as_slice()),
          ] {
 -            if !module.imports.iter().any(|imp| imp.dll == dll) {
 +            if !uses_com && !module.imports.iter().any(|imp| imp.dll == dll) {
@@ -3042,6 +3120,209 @@ index 6f4f73b..475be97 100644
          DI_OK
      }
  }
+diff --git a/win32/winapi/src/dsound.rs b/win32/winapi/src/dsound.rs
+index 99d5611..d022e5d 100644
+--- a/win32/winapi/src/dsound.rs
++++ b/win32/winapi/src/dsound.rs
+@@ -19,6 +19,9 @@ use zerocopy::FromBytes;
+ 
+ use crate::{dllexport::win32flags, heap::Heap, kernel32, locked_state::LockedState};
+ 
++#[path = "voice_catalog.rs"]
++mod voice_catalog;
++
+ /// Set THESEUS_DSOUND_WAV to a path to dump the mixed output there, for
+ /// checking what the mixer actually produced.
+ fn wav_debug_path() -> Option<String> {
+@@ -113,6 +116,10 @@ struct Buffer {
+     cursor: f64,
+     volume: i32,
+     pan: i32,
++    /// Voice identification is cached until PCM is rewritten, independently of playback instances.
++    voice_checked: bool,
++    voice: Option<u16>,
++    caption_instance: u32,
+ }
+ 
+ impl Buffer {
+@@ -186,6 +193,8 @@ struct State {
+     /// Heap holding the buffers' PCM data.
+     heap: Option<Heap>,
+     write: Option<WavWrite>,
++    output_frames: u32,
++    next_caption: u32,
+ }
+ 
+ static STATE: Mutex<Option<State>> = Mutex::new(None);
+@@ -203,11 +212,23 @@ fn init() {
+             stream: None,
+             heap: None,
+             write: wav_debug_path().map(|path| WavWrite::new(&path)),
++            output_frames: 0,
++            next_caption: 1,
+         });
+     }
+ }
+ 
+ impl State {
++    fn stop_caption(&mut self, id: u32) {
++        let Some(buffer) = self.buffers.get_mut(&id) else { return };
++        let instance = std::mem::take(&mut buffer.caption_instance);
++        if let (Some(voice), Some(stream)) = (buffer.voice, self.stream.as_ref()) {
++            if instance != 0 {
++                stream.subtitle_event(2, voice, instance, self.output_frames);
++            }
++        }
++    }
++
+     fn heap(&mut self) -> &Heap {
+         self.heap.get_or_insert_with(|| {
+             // Games allocate a buffer per sound instance and are lax about
+@@ -234,6 +255,7 @@ impl State {
+     /// Mix one chunk of every playing buffer and hand it to the host.
+     fn mix_chunk(&mut self, mem: &Memory) {
+         let mut mixed = [(0f32, 0f32); CHUNK_FRAMES];
++        let mut captions = Vec::new();
+         for buffer in self.buffers.values_mut() {
+             if !buffer.playing || buffer.primary || buffer.size == 0 {
+                 continue;
+@@ -241,7 +263,7 @@ impl State {
+             let frames = buffer.frame_count();
+             let step = buffer.format.rate as f64 / HOST_RATE as f64;
+             let (left_gain, right_gain) = buffer.gains();
+-            for slot in mixed.iter_mut() {
++            for (offset, slot) in mixed.iter_mut().enumerate() {
+                 if buffer.cursor >= frames {
+                     if !buffer.looping {
+                         // Reaching the end stops playback and rewinds, so
+@@ -249,10 +271,24 @@ impl State {
+                         // than replaying the silence past its end.
+                         buffer.playing = false;
+                         buffer.cursor = 0.0;
++                        if let Some(voice) = buffer.voice {
++                            let instance = std::mem::take(&mut buffer.caption_instance);
++                            if instance != 0 {
++                                captions.push((2, voice, instance, self.output_frames.wrapping_add(offset as u32)));
++                            }
++                        }
+                         break;
+                     }
+                     buffer.cursor %= frames;
+                 }
++                if buffer.caption_instance == 0 && self.next_caption != 0 {
++                    if let Some(voice) = buffer.voice {
++                        let instance = self.next_caption;
++                        self.next_caption = instance.checked_add(1).unwrap_or(0);
++                        buffer.caption_instance = instance;
++                        captions.push((1, voice, instance, self.output_frames.wrapping_add(offset as u32)));
++                    }
++                }
+                 let (left, right) = buffer.sample(mem);
+                 slot.0 += left * left_gain;
+                 slot.1 += right * right_gain;
+@@ -271,6 +307,10 @@ impl State {
+             write.write(&bytes);
+         }
+         self.stream().put_data(&bytes);
++        for (kind, voice, instance, frame) in captions {
++            self.stream().subtitle_event(kind, voice, instance, frame);
++        }
++        self.output_frames = self.output_frames.wrapping_add(CHUNK_FRAMES as u32);
+     }
+ }
+ 
+@@ -415,6 +455,9 @@ pub mod IDirectSound {
+                 cursor: 0.0,
+                 volume: 0,
+                 pan: 0,
++                voice_checked: false,
++                voice: None,
++                caption_instance: 0,
+             },
+         );
+         drop(state);
+@@ -472,6 +515,9 @@ pub mod IDirectSound {
+             cursor: 0.0,
+             volume: original.volume,
+             pan: original.pan,
++            voice_checked: original.voice_checked,
++            voice: original.voice,
++            caption_instance: 0,
+         };
+         state.buffers.insert(addr, duplicate);
+         drop(state);
+@@ -572,6 +618,7 @@ pub mod IDirectSoundBuffer {
+                 return buffer.refs;
+             }
+         }
++        state.stop_caption(this);
+         if let Some(buffer) = state.buffers.remove(&this) {
+             // Duplicates share their original's samples, so only free memory
+             // that no surviving buffer still points at.
+@@ -802,20 +849,30 @@ pub mod IDirectSoundBuffer {
+     #[win32_derive::dllexport]
+     pub fn Unlock(
+         _ctx: &mut Context,
+-        _this: u32,
++        this: u32,
+         _pvAudioPtr1: u32,
+         _dwAudioBytes1: u32,
+         _pvAudioPtr2: u32,
+         _dwAudioBytes2: u32,
+     ) -> u32 {
+-        // Lock exposed the buffer's real memory, so the app's writes are
+-        // already visible to the mixer.
++        // Duplicates share PCM. Any rewritten samples invalidate their identities together.
++        let mut state = lock();
++        if let Some(addr) = state.buffers.get(&this).map(|buffer| buffer.addr) {
++            let ids: Vec<_> = state.buffers.iter().filter_map(|(&id, buffer)| (buffer.addr == addr).then_some(id)).collect();
++            for id in ids {
++                state.stop_caption(id);
++                if let Some(buffer) = state.buffers.get_mut(&id) {
++                    buffer.voice_checked = false;
++                    buffer.voice = None;
++                }
++            }
++        }
+         DS_OK
+     }
+ 
+     #[win32_derive::dllexport]
+     pub fn Play(
+-        _ctx: &mut Context,
++        ctx: &mut Context,
+         this: u32,
+         _dwReserved1: u32,
+         _dwPriority: u32,
+@@ -826,6 +883,12 @@ pub mod IDirectSoundBuffer {
+         let Some(buffer) = state.buffers.get_mut(&this) else {
+             return DSERR_INVALIDPARAM;
+         };
++        if !buffer.voice_checked {
++            buffer.voice_checked = true;
++            if voice_catalog::candidate(buffer.format.channels, buffer.format.bits, buffer.size) {
++                buffer.voice = voice_catalog::identify(&ctx.memory[buffer.addr..buffer.addr + buffer.size]);
++            }
++        }
+         // Play resumes from wherever the cursor was left, which is the start
+         // for a fresh buffer and where Stop left off otherwise. A buffer
+         // stopped exactly at its end has nothing left to resume, so start it
+@@ -841,6 +904,7 @@ pub mod IDirectSoundBuffer {
+     #[win32_derive::dllexport]
+     pub fn Stop(_ctx: &mut Context, this: u32) -> u32 {
+         let mut state = lock();
++        state.stop_caption(this);
+         let Some(buffer) = state.buffers.get_mut(&this) else {
+             return DSERR_INVALIDPARAM;
+         };
+@@ -852,6 +916,7 @@ pub mod IDirectSoundBuffer {
+     #[win32_derive::dllexport]
+     pub fn SetCurrentPosition(_ctx: &mut Context, this: u32, dwNewPosition: u32) -> u32 {
+         let mut state = lock();
++        state.stop_caption(this);
+         let Some(buffer) = state.buffers.get_mut(&this) else {
+             return DSERR_INVALIDPARAM;
+         };
 diff --git a/win32/winapi/src/gdi32/bitmap.rs b/win32/winapi/src/gdi32/bitmap.rs
 index f566875..1ae965c 100644
 --- a/win32/winapi/src/gdi32/bitmap.rs
@@ -5056,10 +5337,18 @@ index bf020d2..8a827bf 100644
 +    }
 +}
 diff --git a/win32/winapi/src/lib.rs b/win32/winapi/src/lib.rs
-index da97218..c1cfb76 100644
+index da97218..fa40a1e 100644
 --- a/win32/winapi/src/lib.rs
 +++ b/win32/winapi/src/lib.rs
-@@ -74,7 +74,12 @@ pub fn load(exe: &EXEData) -> Context {
+@@ -6,6 +6,7 @@ pub mod advapi32;
+ pub mod bitmap_format;
+ pub mod ddraw;
+ pub mod dinput;
++pub mod dplay8;
+ mod dllexport;
+ pub mod dsound;
+ pub mod gdi32;
+@@ -74,7 +75,12 @@ pub fn load(exe: &EXEData) -> Context {
      lock.mappings = mappings;
      let mut ctx = Context {
          cpu: CPU::default(),
@@ -5074,7 +5363,7 @@ index da97218..c1cfb76 100644
          memory,
          blocks: exe.blocks,
 diff --git a/win32/winapi/src/ole32.rs b/win32/winapi/src/ole32.rs
-index 134efb2..9fe5963 100644
+index 134efb2..2e2222d 100644
 --- a/win32/winapi/src/ole32.rs
 +++ b/win32/winapi/src/ole32.rs
 @@ -1,4 +1,5 @@
@@ -5083,7 +5372,7 @@ index 134efb2..9fe5963 100644
  
  #[win32_derive::dllexport]
  pub fn CoInitialize(_ctx: &mut Context, _pvReserved: u32) -> u32 /* HRESULT */ {
-@@ -10,12 +11,32 @@ pub fn CoUninitialize(_ctx: &mut Context) {}
+@@ -10,12 +11,44 @@ pub fn CoUninitialize(_ctx: &mut Context) {}
  
  #[win32_derive::dllexport]
  pub fn CoCreateInstance(
@@ -5106,6 +5395,18 @@ index 134efb2..9fe5963 100644
 +    let class = ctx.memory.read::<GUID>(rclsid);
 +    let interface = ctx.memory.read::<GUID>(riid);
 +    match class {
++        crate::dplay8::CLSID_PEER => {
++            if interface != crate::dplay8::IID_PEER && interface != crate::dplay8::IID_UNKNOWN {
++                return 0x80004002;
++            }
++            crate::dplay8::create_peer(ctx, ppv)
++        }
++        crate::dplay8::CLSID_ADDRESS => {
++            if interface != crate::dplay8::IID_ADDRESS && interface != crate::dplay8::IID_UNKNOWN {
++                return 0x80004002;
++            }
++            crate::dplay8::create_address(ctx, ppv)
++        }
 +        GUID((0xd7b70ee0, 0x4340, 0x11cf, [0xb0, 0x63, 0x00, 0x20, 0xaf, 0xc2, 0xcd, 0x35])) =>
 +            crate::ddraw::create_direct_draw(ctx, ppv, riid, false) as u32,
 +        GUID((0x47d4d946, 0x62e8, 0x11cf, [0x93, 0xbc, 0x44, 0x45, 0x53, 0x54, 0x00, 0x00])) => {
@@ -5123,7 +5424,7 @@ index 134efb2..9fe5963 100644
 +    }
  }
 diff --git a/win32/winapi/src/user32/message.rs b/win32/winapi/src/user32/message.rs
-index fcb31c4..b9d952e 100644
+index fcb31c4..01b8aaa 100644
 --- a/win32/winapi/src/user32/message.rs
 +++ b/win32/winapi/src/user32/message.rs
 @@ -318,14 +318,27 @@ pub fn DispatchMessageA(ctx: &mut Context, lpMsg: Ptr<MSG>) -> u32 {
@@ -5161,6 +5462,16 @@ index fcb31c4..b9d952e 100644
  }
  
  #[win32_derive::dllexport]
+@@ -362,6 +375,9 @@ pub fn PeekMessageA(
+     // Games poll for messages every frame; keep the audio mixer fed from here
+     // too, in case the app renders without flipping.
+     crate::dsound::pump(ctx);
++    // DirectPlay callbacks may call user32 again. Pump before borrowing the
++    // queue, on the owning guest thread, with dplay8's recursion guard.
++    crate::dplay8::pump(ctx);
+ 
+     let mut queue = state().message_queue.borrow_mut();
+     queue.poll_host();
 diff --git a/win32/winapi/src/user32/misc.rs b/win32/winapi/src/user32/misc.rs
 index 4a606a1..c32df0b 100644
 --- a/win32/winapi/src/user32/misc.rs
@@ -5801,52 +6112,6 @@ index 506bd94..04b1635 100644
  pub struct Timer {
      pub period: u32,
      pub next: u32,
-diff --git a/runtime/src/cp932.rs b/runtime/src/cp932.rs
-new file mode 100644
-index 0000000..7474e8a
---- /dev/null
-+++ b/runtime/src/cp932.rs
-@@ -0,0 +1,40 @@
-+//! Windows CP932 historical direct/best-fit mappings; browser Shift_JIS differs.
-+const TABLE: &[u8; 262144] = include_bytes!("cp932.bin");
-+fn lookup(offset: usize,value: u16) -> u16 {
-+    let i = offset+value as usize*2;
-+    u16::from_le_bytes([TABLE[i],TABLE[i+1]])
-+}
-+pub fn is_lead(byte: u8) -> bool {(0x81..=0x9f).contains(&byte)||(0xe0..=0xfc).contains(&byte)}
-+pub fn decode_char(value: u16) -> u16 {lookup(0,value)}
-+pub fn decode(bytes: &[u8]) -> (Vec<u16>,bool) {
-+    let mut words = Vec::with_capacity(bytes.len());let mut invalid = false;let mut i = 0;
-+    while i < bytes.len() {
-+        let first = bytes[i];let mut value = first as u16;
-+        if is_lead(first) {
-+            if i+1 < bytes.len() && bytes[i+1] != 0 {value=(value<<8)|bytes[i+1] as u16;i+=1;}
-+            else {invalid=true;}
-+        }
-+        let word=decode_char(value);
-+        if word==0x30fb && value!=0x8145 {invalid=true;}
-+        words.push(word);i+=1;
-+    }
-+    (words,invalid)
-+}
-+pub fn encode_char(word: u16,no_best_fit: bool) -> Option<u16> {
-+    let value=lookup(131072,word);
-+    if (no_best_fit||value==0x3f)&&decode_char(value)!=word {None}else {Some(value)}
-+}
-+#[cfg(test)]
-+mod tests {
-+    use super::*;
-+    #[test]
-+    fn microsoft_yen_best_fit_private_use_and_default() {
-+        assert_eq!(encode_char(0x00a5,false),Some(0x5c));
-+        assert_eq!(encode_char(0x00a5,true),None);
-+        assert_eq!(decode_char(0x5c),0x5c);
-+        assert_eq!(decode_char(0x8145),0x30fb);
-+        assert_eq!(decode(&[0x81,0]).0,vec![0x30fb,0]);
-+        assert_eq!(decode(&[0xf0,0x40]).0,vec![0xe000]);
-+        assert_eq!(decode(&[0x93,0xfa,0x96,0x7b,0x8c,0xea]).0,vec![0x65e5,0x672c,0x8a9e]);
-+    }
-+}
 diff --git a/runtime/src/cp932.bin b/runtime/src/cp932.bin
 new file mode 100644
 index 0000000000000000000000000000000000000000..b1cabf9df5fd92e72b96d7be440d1a1b807efb37
@@ -6691,58 +6956,50 @@ oExz}@5587ko3H&J{9N_dJ0#bi=dbmT^H1*1)-?V)>d)5y0=81n-2eap
 literal 0
 HcmV?d00001
 
-diff --git a/runtime/src/cp936.rs b/runtime/src/cp936.rs
+diff --git a/runtime/src/cp932.rs b/runtime/src/cp932.rs
 new file mode 100644
-index 0000000..9b97775
+index 0000000..7474e8a
 --- /dev/null
-+++ b/runtime/src/cp936.rs
-@@ -0,0 +1,48 @@
-+//! Windows CP936 direct and best-fit tables, from Microsoft's public historical
-+//! mapping (source/hash/generator kept in games/joey/reverse/generate_cp936.py).
-+//! Browser GBK decoding is not a substitute for these Windows tables.
-+mod composition { include!("cp936_composition.rs"); }
-+const TABLE: &[u8; 262144] = include_bytes!("cp936.bin");
-+fn lookup(offset: usize, value: u16) -> u16 {
-+    let i = offset + value as usize * 2;
++++ b/runtime/src/cp932.rs
+@@ -0,0 +1,40 @@
++//! Windows CP932 historical direct/best-fit mappings; browser Shift_JIS differs.
++const TABLE: &[u8; 262144] = include_bytes!("cp932.bin");
++fn lookup(offset: usize,value: u16) -> u16 {
++    let i = offset+value as usize*2;
 +    u16::from_le_bytes([TABLE[i],TABLE[i+1]])
 +}
++pub fn is_lead(byte: u8) -> bool {(0x81..=0x9f).contains(&byte)||(0xe0..=0xfc).contains(&byte)}
 +pub fn decode_char(value: u16) -> u16 {lookup(0,value)}
 +pub fn decode(bytes: &[u8]) -> (Vec<u16>,bool) {
-+    let mut words = Vec::with_capacity(bytes.len()); let mut invalid = false; let mut i = 0;
++    let mut words = Vec::with_capacity(bytes.len());let mut invalid = false;let mut i = 0;
 +    while i < bytes.len() {
-+        let first = bytes[i]; let mut value = first as u16;
-+        if (0x81..=0xfe).contains(&first) {
-+            if i+1 < bytes.len() && bytes[i+1] != 0 {
-+                value = ((first as u16)<<8) | bytes[i+1] as u16; i += 1;
-+            } else {invalid = true;}
++        let first = bytes[i];let mut value = first as u16;
++        if is_lead(first) {
++            if i+1 < bytes.len() && bytes[i+1] != 0 {value=(value<<8)|bytes[i+1] as u16;i+=1;}
++            else {invalid=true;}
 +        }
-+        let word = decode_char(value);
-+        if word == 0x3f && value != 0x3f {invalid = true;}
-+        words.push(word); i += 1;
++        let word=decode_char(value);
++        if word==0x30fb && value!=0x8145 {invalid=true;}
++        words.push(word);i+=1;
 +    }
 +    (words,invalid)
 +}
-+pub fn encode_char(word: u16, no_best_fit: bool) -> Option<u16> {
-+    let value = lookup(131072,word);
-+    if (no_best_fit || value == 0x3f) && decode_char(value) != word {None} else {Some(value)}
++pub fn encode_char(word: u16,no_best_fit: bool) -> Option<u16> {
++    let value=lookup(131072,word);
++    if (no_best_fit||value==0x3f)&&decode_char(value)!=word {None}else {Some(value)}
 +}
-+pub fn compose(a: u16,b: u16) -> Option<u16> {
-+    let key = ((a as u32)<<16) | b as u32;
-+    composition::COMPOSITION.binary_search_by_key(&key,|entry|entry.0).ok().map(|i|composition::COMPOSITION[i].1)
-+}
-+
 +#[cfg(test)]
 +mod tests {
 +    use super::*;
 +    #[test]
-+    fn microsoft_dbcs_private_use_and_best_fit() {
-+        assert_eq!(decode(&[0xd3,0xce,0xcf,0xb7,0xcd,0xf5]).0,vec![0x6e38,0x620f,0x738b]);
-+        assert_eq!(decode(&[0x81,0]).0,vec![0x3f,0]);
-+        assert_eq!(decode(&[0xff]).0,vec![0xf8f5]);
-+        assert_eq!(decode(&[0x80]).0,vec![0x20ac]);
-+        assert_eq!(encode_char(0x20ac,true),Some(0x80));
-+        assert_eq!(compose(b'e' as u16,0x301),Some(0xe9));
-+        assert!(encode_char(0x6e38,true).is_some());
++    fn microsoft_yen_best_fit_private_use_and_default() {
++        assert_eq!(encode_char(0x00a5,false),Some(0x5c));
++        assert_eq!(encode_char(0x00a5,true),None);
++        assert_eq!(decode_char(0x5c),0x5c);
++        assert_eq!(decode_char(0x8145),0x30fb);
++        assert_eq!(decode(&[0x81,0]).0,vec![0x30fb,0]);
++        assert_eq!(decode(&[0xf0,0x40]).0,vec![0xe000]);
++        assert_eq!(decode(&[0x93,0xfa,0x96,0x7b,0x8c,0xea]).0,vec![0x65e5,0x672c,0x8a9e]);
 +    }
 +}
 diff --git a/runtime/src/cp936.bin b/runtime/src/cp936.bin
@@ -8533,6 +8790,60 @@ Sj+>JrVu4f<5BUGN&;JRqpElC~
 literal 0
 HcmV?d00001
 
+diff --git a/runtime/src/cp936.rs b/runtime/src/cp936.rs
+new file mode 100644
+index 0000000..9b97775
+--- /dev/null
++++ b/runtime/src/cp936.rs
+@@ -0,0 +1,48 @@
++//! Windows CP936 direct and best-fit tables, from Microsoft's public historical
++//! mapping (source/hash/generator kept in games/joey/reverse/generate_cp936.py).
++//! Browser GBK decoding is not a substitute for these Windows tables.
++mod composition { include!("cp936_composition.rs"); }
++const TABLE: &[u8; 262144] = include_bytes!("cp936.bin");
++fn lookup(offset: usize, value: u16) -> u16 {
++    let i = offset + value as usize * 2;
++    u16::from_le_bytes([TABLE[i],TABLE[i+1]])
++}
++pub fn decode_char(value: u16) -> u16 {lookup(0,value)}
++pub fn decode(bytes: &[u8]) -> (Vec<u16>,bool) {
++    let mut words = Vec::with_capacity(bytes.len()); let mut invalid = false; let mut i = 0;
++    while i < bytes.len() {
++        let first = bytes[i]; let mut value = first as u16;
++        if (0x81..=0xfe).contains(&first) {
++            if i+1 < bytes.len() && bytes[i+1] != 0 {
++                value = ((first as u16)<<8) | bytes[i+1] as u16; i += 1;
++            } else {invalid = true;}
++        }
++        let word = decode_char(value);
++        if word == 0x3f && value != 0x3f {invalid = true;}
++        words.push(word); i += 1;
++    }
++    (words,invalid)
++}
++pub fn encode_char(word: u16, no_best_fit: bool) -> Option<u16> {
++    let value = lookup(131072,word);
++    if (no_best_fit || value == 0x3f) && decode_char(value) != word {None} else {Some(value)}
++}
++pub fn compose(a: u16,b: u16) -> Option<u16> {
++    let key = ((a as u32)<<16) | b as u32;
++    composition::COMPOSITION.binary_search_by_key(&key,|entry|entry.0).ok().map(|i|composition::COMPOSITION[i].1)
++}
++
++#[cfg(test)]
++mod tests {
++    use super::*;
++    #[test]
++    fn microsoft_dbcs_private_use_and_best_fit() {
++        assert_eq!(decode(&[0xd3,0xce,0xcf,0xb7,0xcd,0xf5]).0,vec![0x6e38,0x620f,0x738b]);
++        assert_eq!(decode(&[0x81,0]).0,vec![0x3f,0]);
++        assert_eq!(decode(&[0xff]).0,vec![0xf8f5]);
++        assert_eq!(decode(&[0x80]).0,vec![0x20ac]);
++        assert_eq!(encode_char(0x20ac,true),Some(0x80));
++        assert_eq!(compose(b'e' as u16,0x301),Some(0xe9));
++        assert!(encode_char(0x6e38,true).is_some());
++    }
++}
 diff --git a/runtime/src/cp936_composition.rs b/runtime/src/cp936_composition.rs
 new file mode 100644
 index 0000000..ea7fc1d
@@ -9654,29 +9965,745 @@ index 0000000..a12cca0
 +        state().clippers.borrow_mut().remove(&this);
 +    }
 +}
-diff --git a/win32/winapi/src/gdi32/display.rs b/win32/winapi/src/gdi32/display.rs
+diff --git a/win32/winapi/src/dplay8.rs b/win32/winapi/src/dplay8.rs
 new file mode 100644
-index 0000000..dc0c41e
+index 0000000..e0fe605
 --- /dev/null
-+++ b/win32/winapi/src/gdi32/display.rs
-@@ -0,0 +1,17 @@
-+//! Frozen task-owned reference desktop: 1024x768, 32 bits, 96 DPI.
-+//! Captured by games/joey/reverse/graphics_probe.c; not a general device driver.
-+pub(super) const CAPS: [i32;121] = [
-+    16384,0,1,0,271,0,203,0,1024,0,
-+    768,0,32,0,1,0,-1,0,-1,0,
-+    0,0,0,0,-1,0,0,0,511,0,
-+    254,0,255,0,31223,0,1,0,48793,0,
-+    36,0,36,0,51,0,0,0,0,0,
-+    0,0,0,0,0,0,0,0,0,0,
-+    0,0,0,0,0,0,0,0,0,0,
-+    0,0,0,0,0,0,0,0,0,0,
-+    0,0,0,0,0,0,0,0,96,0,
-+    96,0,0,0,0,0,0,0,0,0,
-+    0,0,0,0,0,0,20,0,24,0,
-+    0,0,0,0,0,0,1,768,1024,0,
-+    0,
++++ b/win32/winapi/src/dplay8.rs
+@@ -0,0 +1,709 @@
++//! The original game's DirectPlay 8 COM ABI over a bounded browser transport.
++//! Guest callbacks run only at the owning thread's message pump. No registry or
++//! heap lock may be held across a transport call or a call into the guest.
++use std::collections::{HashMap, HashSet, VecDeque};
++use std::sync::{LazyLock, Mutex, MutexGuard};
++use runtime::Context;
++use crate::{ddraw::GUID, kernel32};
++
++pub const CLSID_PEER: GUID = GUID((0x286f484d,0x375e,0x4458,[0xa2,0x72,0xb1,0x38,0xe2,0xf8,0x0a,0x6a]));
++pub const IID_PEER: GUID = GUID((0x5102dacf,0x241b,0x11d3,[0xae,0xa7,0,0x60,0x97,0xb0,0x14,0x11]));
++pub const CLSID_ADDRESS: GUID = GUID((0x934a9523,0xa3ca,0x4bc5,[0xad,0xa0,0xd6,0xd9,0x5d,0x97,0x94,0x21]));
++pub const IID_ADDRESS: GUID = GUID((0x83783300,0x4063,0x4c8a,[0x9d,0xb3,0x82,0x83,0x0a,0x7f,0xeb,0x31]));
++pub const IID_UNKNOWN: GUID = GUID((0,0,0,[0xc0,0,0,0,0,0,0,0x46]));
++const TCPIP: [u8;16] = [0xa0,0x7b,0xfe,0xeb,0x8d,0x62,0xd2,0x11,0xae,0x0f,0,0x60,0x97,0xb0,0x14,0x11];
++const OK:u32=0;
++const PENDING:u32=0x0015800e;
++const POINTER:u32=0x80004003;
++const INVALID:u32=0x80070057;
++const NOTIMPL:u32=0x80004001;
++const NOINTERFACE:u32=0x80004002;
++const FAIL:u32=0x80004005;
++const SMALL:u32=0x80158100;
++const UNINITIALIZED:u32=0x80158640;
++const INVALID_HANDLE:u32=0x80158360;
++const INVALID_PLAYER:u32=0x80158420;
++const NO_CONNECTION:u32=0x80158480;
++const LOST:u32=0x80158160;
++const CANCELLED:u32=0x80158650;
++const SYNC:u32=0x80000000;
++const MAX_WIRE:usize=65568;
++
++pub const VTABLES:[(&str,&[&str]);2]=[
++    ("IDirectPlay8Peer",IDirectPlay8Peer::VTABLE_ENTRIES.as_slice()),
++    ("IDirectPlay8Address",IDirectPlay8Address::VTABLE_ENTRIES.as_slice()),
 +];
++#[derive(Clone, Default, PartialEq)]
++struct Address {
++    refs:u32, provider:Option<[u8;16]>, device:Option<[u8;16]>,
++    components:Vec<(String,u32,Vec<u8>)>, user_data:Vec<u8>,
++}
++#[derive(Clone)]
++struct Player { name:String, flags:u32, context:u32 }
++#[derive(Clone, Copy)]
++struct Operation { kind:u32, context:u32 }
++#[derive(Default)]
++struct Peer {
++    refs:u32, transport:u32, owner:u32, callback:u32, context:u32,
++    connected:bool, polling:bool, local:u32, player_context:u32, name:String,
++    players:HashMap<u32,Player>, operations:HashMap<u32,Operation>,
++    // Local send/cancel completions are dispatched at the same safe point.
++    completions:VecDeque<(u32,u32,u32,Operation)>, buffers:HashSet<u32>,
++}
++#[derive(Default)]
++struct State {
++    peers:HashMap<u32,Peer>, addresses:HashMap<u32,Address>,
++    next_id:u32, pumping:HashSet<u32>,
++}
++static STATE:LazyLock<Mutex<State>>=LazyLock::new(||Mutex::new(State::default()));
++fn state()->MutexGuard<'static,State> {STATE.lock().unwrap()}
++fn next_id(s:&mut State)->u32 {
++    // Never reuse a transport generation or async handle in this worker.
++    s.next_id=s.next_id.checked_add(1).expect("DirectPlay identity space exhausted");s.next_id
++}
++fn valid(ctx:&Context,p:u32,n:usize)->bool {
++    p>=0x1000 && (p as usize).checked_add(n).is_some_and(|end|end<=ctx.memory.bytes.len())
++}
++fn bytes(ctx:&Context,p:u32,n:usize)->Result<Vec<u8>,u32> {
++    if n==0 {return Ok(Vec::new());}
++    if n>MAX_WIRE || !valid(ctx,p,n) {return Err(POINTER);}
++    Ok(ctx.memory.bytes[p as usize..p as usize+n].to_vec())
++}
++fn guid(ctx:&Context,p:u32)->Result<[u8;16],u32> {
++    if !valid(ctx,p,16) {return Err(POINTER);}
++    Ok(ctx.memory.bytes[p as usize..p as usize+16].try_into().unwrap())
++}
++fn wide(ctx:&Context,p:u32)->Result<String,u32> {
++    if p==0 {return Ok(String::new());}
++    let mut units=Vec::new();
++    for i in 0..=128 {
++        let at=p.checked_add(i*2).ok_or(POINTER)?;
++        if !valid(ctx,at,2) {return Err(POINTER);}
++        let unit=ctx.memory.read::<u16>(at);
++        if unit==0 {
++            let text=String::from_utf16(&units).map_err(|_|INVALID)?;
++            return if text.len()<=128 {Ok(text)}else {Err(INVALID)};
++        }
++        units.push(unit);
++    }
++    Err(INVALID)
++}
++fn utf16(text:&str)->Vec<u8> {text.encode_utf16().chain(Some(0)).flat_map(u16::to_le_bytes).collect()}
++fn put(ctx:&mut Context,p:u32,data:&[u8]) {ctx.memory.bytes[p as usize..p as usize+data.len()].copy_from_slice(data);}
++fn words(ctx:&mut Context,p:u32,values:&[u32]) {for (i,v) in values.iter().enumerate() {ctx.memory.write::<u32>(p+i as u32*4,*v);}}
++fn alloc(ctx:&mut Context,size:usize)->u32 {
++    let p=kernel32::lock().process_heap.alloc(&mut ctx.memory,size as u32);
++    ctx.memory.bytes[p as usize..p as usize+size].fill(0);p
++}
++fn free(ctx:&mut Context,p:u32) {kernel32::lock().process_heap.free(&mut ctx.memory,p);}
++fn transport(this:u32)->Result<u32,u32> {
++    let s=state();let p=s.peers.get(&this).ok_or(INVALID)?;
++    if p.transport==0 {Err(UNINITIALIZED)}else {Ok(p.transport)}
++}
++fn rpc(id:u32,op:u32,args:&[u32],text:&str,data:&[u8])->u32 {
++    host::host().network_call(id,op,args,text,data,&mut []).0
++}
++fn current(this:u32,id:u32)->bool {state().peers.get(&this).is_some_and(|p|p.transport==id&&id!=0)}
++fn copy_out(ctx:&mut Context,data:&[u8],output:u32,size:u32)->u32 {
++    if !valid(ctx,size,4) {return POINTER;}
++    let capacity=ctx.memory.read::<u32>(size) as usize;
++    ctx.memory.write::<u32>(size,data.len() as u32);
++    if output==0||capacity<data.len() {return SMALL;}
++    if !valid(ctx,output,data.len()) {return POINTER;}
++    put(ctx,output,data);OK
++}
++fn new_address(ctx:&mut Context,mut address:Address)->u32 {
++    let p=alloc(ctx,4);ctx.memory.write::<u32>(p,unsafe {IDirectPlay8Address::VTABLE});
++    address.refs=1;state().addresses.insert(p,address);p
++}
++pub fn create_address(ctx:&mut Context,output:u32)->u32 {
++    if !valid(ctx,output,4) {return POINTER;}
++    let p=new_address(ctx,Address::default());ctx.memory.write::<u32>(output,p);OK
++}
++pub fn create_peer(ctx:&mut Context,output:u32)->u32 {
++    if !valid(ctx,output,4) {return POINTER;}
++    let p=alloc(ctx,4);ctx.memory.write::<u32>(p,unsafe {IDirectPlay8Peer::VTABLE});
++    state().peers.insert(p,Peer {refs:1,..Default::default()});ctx.memory.write::<u32>(output,p);OK
++}
++fn valid_address(p:u32)->bool {state().addresses.get(&p).is_some_and(|a|a.provider==Some(TCPIP))}
++fn app(ctx:&Context,p:u32)->Result<([u8;16],[u8;16],String),u32> {
++    if !valid(ctx,p,72) {return Err(POINTER);}
++    if ctx.memory.read::<u32>(p)!=72 {return Err(INVALID);}
++    // Passwords and application blobs are outside this game's observed ABI.
++    if ctx.memory.read::<u32>(p+52)!=0||ctx.memory.read::<u32>(p+60)!=0||ctx.memory.read::<u32>(p+68)!=0 {return Err(NOTIMPL);}
++    Ok((guid(ctx,p+8)?,guid(ctx,p+24)?,wide(ctx,ctx.memory.read::<u32>(p+48))?))
++}
++fn begin_operation(ctx:&mut Context,this:u32,kind:u32,context:u32,out:u32)->Result<(u32,u32),u32> {
++    if !valid(ctx,out,4) {return Err(POINTER);}
++    ctx.memory.write::<u32>(out,0);
++    let mut s=state();let id=s.peers.get(&this).ok_or(INVALID)?.transport;
++    if id==0 {return Err(UNINITIALIZED);}
++    if s.peers[&this].operations.len()>=32||s.peers[&this].completions.len()>=64 {return Err(FAIL);}
++    let handle=next_id(&mut s);
++    s.peers.get_mut(&this).unwrap().operations.insert(handle,Operation {kind,context});
++    ctx.memory.write::<u32>(out,handle);Ok((id,handle))
++}
++fn abort_operation(ctx:&mut Context,this:u32,id:u32,handle:u32,out:u32,result:u32)->u32 {
++    if current(this,id) {state().peers.get_mut(&this).unwrap().operations.remove(&handle);}
++    if valid(ctx,out,4) {ctx.memory.write::<u32>(out,0);}result
++}
++fn packet_valid(data:&[u8],sender:u32)->bool {
++    data.len()>=7 && data.len()<=65542 && data[0]==2 &&
++        u32::from_le_bytes(data[1..5].try_into().unwrap())==sender &&
++        u16::from_le_bytes(data[5..7].try_into().unwrap()) as usize==data.len()-7
++}
++struct Event<'a> {kind:u32,id:u32,flags:u32,extra:u32,data:&'a [u8]}
++fn event(data:&[u8])->Option<Event<'_>> {
++    if data.len()<16||data.len()>MAX_WIRE {return None;}
++    let word=|i|u32::from_le_bytes(data[i..i+4].try_into().unwrap());
++    let e=Event {kind:word(0),id:word(4),flags:word(8),extra:word(12),data:&data[16..]};
++    let name=|d:&[u8]|d.len()<=128&&!d.contains(&0)&&std::str::from_utf8(d).is_ok();
++    let good=match e.kind {
++        1=>matches!(e.id,1|2)&&e.flags&!6==0&&name(e.data),
++        2=>matches!(e.id,1|2)&&e.data.is_empty(),
++        3=>e.data.len()>=32&&e.extra<=2&&name(&e.data[32..]),
++        4|6|7=>e.data.is_empty(),
++        5=>matches!(e.id,1|2)&&packet_valid(e.data,e.id),
++        _=>false,
++    };
++    good.then_some(e)
++}
++
++/// Bounded and nonrecursive, including when a callback pumps user32 itself.
++/// In particular, never run this from Release/Close/helper destruction.
++pub fn pump(ctx:&mut Context) {
++    if ctx.cpu.thread_exit_code.is_some() {return;}
++    let peers={
++        let mut s=state();
++        let peers:Vec<_>=s.peers.iter().filter(|(_,p)|p.transport!=0&&p.polling&&p.owner==ctx.thread_id).map(|(&a,p)|(a,p.transport)).collect();
++        if peers.is_empty()||!s.pumping.insert(ctx.thread_id) {return;}peers
++    };
++    let mut response=vec![0u8;MAX_WIRE];
++    for (this,id) in peers {
++        for _ in 0..16 {
++            if ctx.cpu.thread_exit_code.is_some()||!current(this,id) {break;}
++            let local={state().peers.get_mut(&this).and_then(|p|p.completions.pop_front())};
++            if let Some((kind,handle,result,op))=local {
++                // Accepted sends keep handles until completion but cannot be cancelled.
++                // Other cancellations removed the operation before queuing.
++                if kind==8&&result!=CANCELLED {
++                    if state().peers.get_mut(&this).and_then(|p|p.operations.remove(&handle)).is_none() {continue;}
++                }
++                complete(ctx,this,id,kind,handle,result,0,op);continue;
++            }
++            let (hr,len)=host::host().network_call(id,7,&[],"",&[],&mut response);
++            if !current(this,id) {break;}
++            if hr!=OK||len>response.len() {
++                terminate(ctx,this,id,if hr==OK {FAIL}else {hr});break;
++            }
++            if len==0 {break;}
++            match event(&response[..len]) {
++                Some(e)=>dispatch(ctx,this,id,e),
++                None=>{terminate(ctx,this,id,FAIL);break;}
++            }
++        }
++    }
++    state().pumping.remove(&ctx.thread_id);
++}
++fn callback(ctx:&mut Context,this:u32,id:u32,message:u32,p:u32)->Option<u32> {
++    let (function,context)={
++        let s=state();let peer=s.peers.get(&this)?;
++        if peer.transport!=id||id==0||peer.owner!=ctx.thread_id {return None;}
++        (peer.callback,peer.context)
++    };
++    if function==0||ctx.cpu.thread_exit_code.is_some() {return None;}
++    let function=ctx.indirect32(function);
++    ctx.call32_x86(function,vec![context,message,p]);Some(ctx.cpu.regs.eax)
++}
++fn complete(ctx:&mut Context,this:u32,id:u32,kind:u32,handle:u32,result:u32,local:u32,op:Operation) {
++    let (message,values)=match kind {
++        4=>(0xffff0005,vec![28,handle,op.context,result,0,0,local]),
++        8=>(0xffff0014,vec![40,handle,op.context,result,0,0,0,0,0,0]),
++        _=>(0xffff0003,vec![16,handle,op.context,result]),
++    };
++    let p=alloc(ctx,values.len()*4);words(ctx,p,&values);callback(ctx,this,id,message,p);free(ctx,p);
++}
++fn terminate(ctx:&mut Context,this:u32,id:u32,result:u32) {
++    if !current(this,id) {return;}
++    // Stop transport production, but retain the identity until Close so a
++    // queued termination can be delivered once and the UI can tear down.
++    let should_notify={
++        let mut s=state();let p=s.peers.get_mut(&this).unwrap();
++        let active=p.connected||!p.players.is_empty()||!p.operations.is_empty();
++        p.connected=false;p.polling=false;p.operations.clear();p.completions.clear();active
++    };
++    rpc(id,9,&[],"",&[]);
++    if should_notify {let p=alloc(ctx,16);words(ctx,p,&[16,result,0,0]);callback(ctx,this,id,0xffff0016,p);free(ctx,p);}
++    if current(this,id) {state().peers.get_mut(&this).unwrap().players.clear();}
++}
++fn dispatch(ctx:&mut Context,this:u32,id:u32,e:Event<'_>) {
++    match e.kind {
++        1=>{
++            let context={
++                let mut s=state();let p=s.peers.get_mut(&this).unwrap();
++                if p.players.contains_key(&e.id) {return;}
++                let context=if e.flags&2!=0 {p.local=e.id;p.player_context}else {0};
++                p.players.insert(e.id,Player {name:std::str::from_utf8(e.data).unwrap().to_owned(),flags:e.flags,context});
++                context
++            };
++            let p=alloc(ctx,12);words(ctx,p,&[12,e.id,context]);callback(ctx,this,id,0xffff0007,p);
++            let assigned=ctx.memory.read::<u32>(p+8);free(ctx,p);
++            if current(this,id) {if let Some(player)=state().peers.get_mut(&this).unwrap().players.get_mut(&e.id) {player.context=assigned;}}
++        }
++        2=>{
++            let player=state().peers.get(&this).and_then(|p|p.players.get(&e.id).cloned());
++            let Some(player)=player else {return;};
++            let p=alloc(ctx,16);words(ctx,p,&[16,e.id,player.context,e.flags]);callback(ctx,this,id,0xffff0009,p);free(ctx,p);
++            if current(this,id) {state().peers.get_mut(&this).unwrap().players.remove(&e.id);}
++        }
++        3=>{
++            let op=state().peers.get(&this).and_then(|p|p.operations.get(&e.id).copied());
++            let Some(op)=op.filter(|op|op.kind==3) else {return;};
++            let name=utf16(std::str::from_utf8(&e.data[32..]).unwrap());
++            let p=alloc(ctx,104+name.len());let desc=p+32;
++            let sender=new_address(ctx,Address {provider:Some(TCPIP),..Default::default()});
++            let device=new_address(ctx,Address {provider:Some(TCPIP),..Default::default()});
++            words(ctx,p,&[32,sender,device,desc,0,0,op.context,0]);
++            words(ctx,desc,&[72,0]);put(ctx,desc+8,&e.data[..32]);
++            words(ctx,desc+40,&[2,e.extra,p+104,0,0,0,0,0]);put(ctx,p+104,&name);
++            callback(ctx,this,id,0xffff000b,p);
++            IDirectPlay8Address::Release(ctx,sender);IDirectPlay8Address::Release(ctx,device);free(ctx,p);
++        }
++        4|7=>{
++            let op={
++                let mut s=state();let p=s.peers.get_mut(&this).unwrap();
++                let Some(op)=p.operations.get(&e.id).copied() else {return;};
++                if (e.kind==4&&op.kind!=4)||(e.kind==7&&op.kind!=3) {return;}
++                p.operations.remove(&e.id);
++                if e.kind==4 {p.connected=e.flags==OK;if e.flags==OK {p.local=e.extra;}}
++                op
++            };
++            complete(ctx,this,id,e.kind,e.id,e.flags,e.extra,op);
++        }
++        5=>{
++            let player=state().peers.get(&this).and_then(|p|p.players.get(&e.id).cloned());
++            let Some(player)=player else {terminate(ctx,this,id,LOST);return;};
++            let p=alloc(ctx,28+e.data.len());words(ctx,p,&[28,e.id,player.context,p+28,e.data.len() as u32,p,1]);put(ctx,p+28,e.data);
++            let result=callback(ctx,this,id,0xffff0011,p);
++            if result==Some(PENDING)&&current(this,id) {
++                let mut s=state();let peer=s.peers.get_mut(&this).unwrap();
++                if peer.buffers.len()<16 {peer.buffers.insert(p);return;}
++            }
++            free(ctx,p);
++        }
++        6=>terminate(ctx,this,id,e.flags),
++        _=>{},
++    }
++}
++
++// Keep every slot and its exact stdcall arity, including unsupported methods.
++pub mod IDirectPlay8Peer {
++    use super::*;
++    pub static mut VTABLE:u32=0;
++    pub const VTABLE_ENTRIES:[&str;37]=[
++        "QueryInterface","AddRef","Release","Initialize","EnumServiceProviders","CancelAsyncOperation","Connect","SendTo",
++        "GetSendQueueInfo","Host","GetApplicationDesc","SetApplicationDesc","CreateGroup","DestroyGroup","AddPlayerToGroup",
++        "RemovePlayerFromGroup","SetGroupInfo","GetGroupInfo","EnumPlayersAndGroups","EnumGroupMembers","SetPeerInfo",
++        "GetPeerInfo","GetPeerAddress","GetLocalHostAddresses","Close","EnumHosts","DestroyPeer","ReturnBuffer",
++        "GetPlayerContext","GetGroupContext","GetCaps","SetCaps","SetSPCaps","GetSPCaps","GetConnectionInfo","RegisterLobby","TerminateSession",
++    ];
++    #[win32_derive::dllexport]
++    pub fn QueryInterface(ctx:&mut Context,this:u32,iid:u32,out:u32)->u32 {
++        if !valid(ctx,iid,16)||!valid(ctx,out,4) {return POINTER;}
++        ctx.memory.write::<u32>(out,0);let iid=ctx.memory.read::<GUID>(iid);
++        if iid!=IID_PEER&&iid!=IID_UNKNOWN {return NOINTERFACE;}
++        if AddRef(ctx,this)==0 {return INVALID;}
++        ctx.memory.write::<u32>(out,this);OK
++    }
++    #[win32_derive::dllexport]
++    pub fn AddRef(_ctx:&mut Context,this:u32)->u32 {
++        let mut s=state();let Some(p)=s.peers.get_mut(&this) else {return 0;};p.refs=p.refs.saturating_add(1);p.refs
++    }
++    #[win32_derive::dllexport]
++    pub fn Release(ctx:&mut Context,this:u32)->u32 {
++        let remaining={let mut s=state();let Some(p)=s.peers.get_mut(&this) else {return 0;};p.refs-=1;p.refs};
++        if remaining==0 {Close(ctx,this,0);state().peers.remove(&this);free(ctx,this);}remaining
++    }
++    #[win32_derive::dllexport]
++    pub fn Initialize(ctx:&mut Context,this:u32,context:u32,function:u32,flags:u32)->u32 {
++        if flags&!7!=0||!valid(ctx,function,1) {return INVALID;}
++        let id={
++            let mut s=state();let Some(p)=s.peers.get(&this) else {return INVALID;};
++            if p.transport!=0 {return 0x80158080;}
++            let id=next_id(&mut s);let p=s.peers.get_mut(&this).unwrap();
++            p.transport=id;p.polling=true;p.owner=ctx.thread_id;p.callback=function;p.context=context;id
++        };
++        let hr=rpc(id,1,&[],"",&[]);
++        if hr!=OK&&current(this,id) {state().peers.get_mut(&this).unwrap().transport=0;}hr
++    }
++    #[win32_derive::dllexport]
++    pub fn Close(ctx:&mut Context,this:u32,flags:u32)->u32 {
++        if flags&!1!=0 {return INVALID;}
++        let (id,buffers)={
++            let mut s=state();let Some(p)=s.peers.get_mut(&this) else {return INVALID;};
++            let id=p.transport;p.transport=0;p.callback=0;p.connected=false;p.polling=false;p.local=0;
++            p.players.clear();p.operations.clear();p.completions.clear();p.name.clear();
++            (id,p.buffers.drain().collect::<Vec<_>>())
++        };
++        // Invalidate before RPC: a pending reply must never touch a new session.
++        if id!=0 {rpc(id,9,&[],"",&[]);}
++        for p in buffers {free(ctx,p);}OK
++    }
++    #[win32_derive::dllexport]
++    pub fn SetPeerInfo(ctx:&mut Context,this:u32,info:u32,async_context:u32,handle:u32,flags:u32)->u32 {
++        let id=match transport(this) {Ok(id)=>id,Err(e)=>return e};
++        if flags!=SYNC {return NOTIMPL;}
++        if async_context!=0||handle!=0 {return INVALID;}
++        if !valid(ctx,info,24) {return POINTER;}
++        if ctx.memory.read::<u32>(info)!=24||ctx.memory.read::<u32>(info+4)&!1!=0 {return NOTIMPL;}
++        let name=match wide(ctx,ctx.memory.read::<u32>(info+8)) {Ok(s)=>s,Err(e)=>return e};
++        let hr=rpc(id,2,&[],&name,&[]);
++        if hr==OK&&current(this,id) {state().peers.get_mut(&this).unwrap().name=name;}hr
++    }
++    #[win32_derive::dllexport]
++    pub fn GetPeerInfo(ctx:&mut Context,this:u32,player:u32,out:u32,size:u32,flags:u32)->u32 {
++        if flags!=0 {return INVALID;}
++        if let Err(e)=transport(this) {return e;}
++        let player=state().peers.get(&this).and_then(|p|p.players.get(&player).cloned());
++        let Some(player)=player else {return INVALID_PLAYER;};
++        if !valid(ctx,size,4) {return POINTER;}
++        let name=utf16(&player.name);let required=24+name.len();let capacity=ctx.memory.read::<u32>(size) as usize;
++        ctx.memory.write::<u32>(size,required as u32);
++        if out==0||capacity<required {return SMALL;}
++        if !valid(ctx,out,required) {return POINTER;}
++        if ctx.memory.read::<u32>(out)!=24 {return INVALID;}
++        words(ctx,out,&[24,1,out+24,0,0,player.flags]);put(ctx,out+24,&name);OK
++    }
++    #[win32_derive::dllexport]
++    pub fn Host(ctx:&mut Context,this:u32,desc:u32,devices:u32,count:u32,security:u32,credentials:u32,player_context:u32,flags:u32)->u32 {
++        let id=match transport(this) {Ok(id)=>id,Err(e)=>return e};
++        if flags&!1!=0||count!=1||security!=0||credentials!=0 {return NOTIMPL;}
++        if !valid(ctx,devices,4) {return POINTER;}
++        if !valid_address(ctx.memory.read::<u32>(devices)) {return INVALID;}
++        let (_,application,name)=match app(ctx,desc) {Ok(a)=>a,Err(e)=>return e};
++        if ctx.memory.read::<u32>(desc+40)!=2 {return INVALID;}
++        {let mut s=state();let p=s.peers.get_mut(&this).unwrap();if p.connected {return 0x80158060;}p.player_context=player_context;}
++        let hr=rpc(id,3,&[],&name,&application);
++        if hr==OK&&current(this,id) {state().peers.get_mut(&this).unwrap().connected=true;}hr
++    }
++    #[win32_derive::dllexport]
++    pub fn EnumHosts(ctx:&mut Context,this:u32,desc:u32,host_address:u32,device:u32,user_data:u32,user_len:u32,count:u32,retry:u32,timeout:u32,context:u32,out:u32,flags:u32)->u32 {
++        if flags&!3!=0||user_data!=0||user_len!=0 {return NOTIMPL;}
++        if !valid_address(device)||(host_address!=0&&!valid_address(host_address)) {return INVALID;}
++        let (_,application,_)=match app(ctx,desc) {Ok(a)=>a,Err(e)=>return e};
++        let (id,handle)=match begin_operation(ctx,this,3,context,out) {Ok(v)=>v,Err(e)=>return e};
++        // The game requests INFINITE count/timeout. Finishing a single room
++        // lookup is not completing that operation: its completion callback
++        // destroys the original UI's entire discovery list (0x401750).
++        let hr=rpc(id,4,&[handle,count,retry,timeout],"",&application);
++        if hr!=OK {return abort_operation(ctx,this,id,handle,out,hr);}PENDING
++    }
++    #[win32_derive::dllexport]
++    pub fn Connect(ctx:&mut Context,this:u32,desc:u32,address:u32,device:u32,security:u32,credentials:u32,user_data:u32,user_len:u32,player_context:u32,context:u32,out:u32,flags:u32)->u32 {
++        if flags&!1!=0||security!=0||credentials!=0||user_data!=0||user_len!=0 {return NOTIMPL;}
++        if !valid_address(address)||!valid_address(device) {return INVALID;}
++        let (instance,_,_)=match app(ctx,desc) {Ok(a)=>a,Err(e)=>return e};
++        let (id,handle)=match begin_operation(ctx,this,4,context,out) {Ok(v)=>v,Err(e)=>return e};
++        state().peers.get_mut(&this).unwrap().player_context=player_context;
++        let hr=rpc(id,5,&[handle],"",&instance);
++        if hr!=OK {return abort_operation(ctx,this,id,handle,out,hr);}PENDING
++    }
++    #[win32_derive::dllexport]
++    pub fn CancelAsyncOperation(_ctx:&mut Context,this:u32,handle:u32,flags:u32)->u32 {
++        let id=match transport(this) {Ok(id)=>id,Err(e)=>return e};
++        if flags&!0x8007!=0||(handle!=0&&flags!=0)||(handle==0&&flags==0) {return INVALID;}
++        let cancelled={
++            let mut s=state();let p=s.peers.get_mut(&this).unwrap();
++            // op6 has already accepted these bytes. A delayed completion
++            // callback does not make an already delivered send cancellable.
++            if handle!=0&&p.operations.get(&handle).is_some_and(|op|op.kind==8) {return 0x80158110;}
++            let handles:Vec<_>=p.operations.iter().filter(|(h,op)|
++                if handle!=0 {**h==handle}else {op.kind!=8&&(flags&0x8000!=0||flags&(if op.kind==4 {1}else {2})!=0)}
++            ).map(|(&h,_)|h).collect();
++            if handle!=0&&handles.is_empty() {return INVALID_HANDLE;}
++            handles.into_iter().map(|h|{
++                p.completions.retain(|(_,queued,_,_)|*queued!=h);
++                (h,p.operations.remove(&h).unwrap())
++            }).collect::<Vec<_>>()
++        };
++        for (h,op) in cancelled {
++            rpc(id,8,&[h],"",&[]);
++            if current(this,id) {state().peers.get_mut(&this).unwrap().completions.push_back((if op.kind==4 {4}else if op.kind==8 {8}else {7},h,CANCELLED,op));}
++        }OK
++    }
++    #[win32_derive::dllexport]
++    pub fn SendTo(ctx:&mut Context,this:u32,target:u32,descs:u32,count:u32,_timeout:u32,context:u32,out:u32,flags:u32)->u32 {
++        let id=match transport(this) {Ok(id)=>id,Err(e)=>return e};
++        if flags&!(SYNC|0x2|0x8)!=0||count==0||count>16 {return NOTIMPL;}
++        if out!=0&&!valid(ctx,out,4) {return POINTER;}
++        if out!=0 {ctx.memory.write::<u32>(out,0);}
++        if !valid(ctx,descs,count as usize*8) {return POINTER;}
++        let (local,connected)={let s=state();let p=&s.peers[&this];(p.local,p.connected)};
++        if !connected||local==0 {return NO_CONNECTION;}
++        {let s=state();let p=&s.peers[&this];if p.operations.len()+p.completions.len()>=64 {return FAIL;}}
++        if target!=0&&!state().peers[&this].players.contains_key(&target) {return INVALID_PLAYER;}
++        let mut data=Vec::new();
++        for i in 0..count {
++            let len=ctx.memory.read::<u32>(descs+i*8) as usize;let ptr=ctx.memory.read::<u32>(descs+i*8+4);
++            if len>MAX_WIRE-data.len() {return INVALID;}
++            match bytes(ctx,ptr,len) {Ok(chunk)=>data.extend_from_slice(&chunk),Err(e)=>return e};
++        }
++        if !packet_valid(&data,local) {return INVALID;}
++        // The EXE frees its send buffer as soon as we return. The transport
++        // receives this owned copy, never the caller's buffer.
++        let hr=rpc(id,6,&[target],"",&data);if hr!=OK {return hr;}
++        if flags&(SYNC|2)!=0 {return OK;}
++        let mut s=state();let handle=next_id(&mut s);let Some(p)=s.peers.get_mut(&this).filter(|p|p.transport==id) else {return LOST;};
++        let op=Operation {kind:8,context};p.operations.insert(handle,op);
++        p.completions.push_back((8,handle,OK,op));
++        if out!=0 {ctx.memory.write::<u32>(out,handle);}PENDING
++    }
++    #[win32_derive::dllexport]
++    pub fn GetSPCaps(ctx:&mut Context,this:u32,provider:u32,out:u32,flags:u32)->u32 {
++        if let Err(e)=transport(this) {return e;}
++        if flags!=0 {return INVALID;}
++        if guid(ctx,provider)!=Ok(TCPIP) {return INVALID;}
++        if !valid(ctx,out,36) {return POINTER;}
++        if ctx.memory.read::<u32>(out)!=36 {return INVALID;}
++        words(ctx,out,&[36,0,1,3,1500,1500,1024,1,65536]);OK
++    }
++    #[win32_derive::dllexport]
++    pub fn ReturnBuffer(ctx:&mut Context,this:u32,handle:u32,flags:u32)->u32 {
++        if flags!=0 {return INVALID;}
++        let removed=state().peers.get_mut(&this).is_some_and(|p|p.buffers.remove(&handle));
++        if !removed {return INVALID_HANDLE;}free(ctx,handle);OK
++    }
++    #[win32_derive::dllexport]
++    pub fn GetPlayerContext(ctx:&mut Context,this:u32,player:u32,out:u32,flags:u32)->u32 {
++        if flags!=0 {return INVALID;}
++        if !valid(ctx,out,4) {return POINTER;}
++        let context=state().peers.get(&this).and_then(|p|p.players.get(&player).map(|p|p.context));
++        let Some(context)=context else {return INVALID_PLAYER;};ctx.memory.write::<u32>(out,context);OK
++    }
++    #[win32_derive::dllexport]
++    pub fn EnumServiceProviders(ctx:&mut Context,_this:u32,provider:u32,_application:u32,out:u32,size:u32,count:u32,flags:u32)->u32 {
++        if flags&!1!=0 {return INVALID;}
++        if !valid(ctx,count,4)||!valid(ctx,size,4) {return POINTER;}
++        ctx.memory.write::<u32>(count,0);
++        // Only TCP/IP is represented, and it uses the browser relay.
++        if provider!=0 {ctx.memory.write::<u32>(size,0);return OK;}
++        let name=utf16("TCP/IP");let required=32+name.len();let available=ctx.memory.read::<u32>(size) as usize;
++        ctx.memory.write::<u32>(size,required as u32);ctx.memory.write::<u32>(count,1);
++        if out==0||available<required {return SMALL;}
++        if !valid(ctx,out,required) {return POINTER;}
++        words(ctx,out,&[0]);put(ctx,out+4,&TCPIP);words(ctx,out+20,&[out+32,0,0]);put(ctx,out+32,&name);OK
++    }
++    #[win32_derive::dllexport]
++    pub fn GetSendQueueInfo(_ctx:&mut Context,_this:u32,_player:u32,_messages:u32,_bytes:u32,_flags:u32)->u32 {NOTIMPL}
++    #[win32_derive::dllexport]
++    pub fn GetApplicationDesc(_ctx:&mut Context,_this:u32,_desc:u32,_size:u32,_flags:u32)->u32 {NOTIMPL}
++    #[win32_derive::dllexport]
++    pub fn SetApplicationDesc(_ctx:&mut Context,_this:u32,_desc:u32,_flags:u32)->u32 {NOTIMPL}
++    #[win32_derive::dllexport]
++    pub fn CreateGroup(_ctx:&mut Context,_this:u32,_info:u32,_group_context:u32,_async_context:u32,_handle:u32,_flags:u32)->u32 {NOTIMPL}
++    #[win32_derive::dllexport]
++    pub fn DestroyGroup(_ctx:&mut Context,_this:u32,_group:u32,_async_context:u32,_handle:u32,_flags:u32)->u32 {NOTIMPL}
++    #[win32_derive::dllexport]
++    pub fn AddPlayerToGroup(_ctx:&mut Context,_this:u32,_group:u32,_player:u32,_async_context:u32,_handle:u32,_flags:u32)->u32 {NOTIMPL}
++    #[win32_derive::dllexport]
++    pub fn RemovePlayerFromGroup(_ctx:&mut Context,_this:u32,_group:u32,_player:u32,_async_context:u32,_handle:u32,_flags:u32)->u32 {NOTIMPL}
++    #[win32_derive::dllexport]
++    pub fn SetGroupInfo(_ctx:&mut Context,_this:u32,_group:u32,_info:u32,_async_context:u32,_handle:u32,_flags:u32)->u32 {NOTIMPL}
++    #[win32_derive::dllexport]
++    pub fn GetGroupInfo(_ctx:&mut Context,_this:u32,_group:u32,_info:u32,_size:u32,_flags:u32)->u32 {NOTIMPL}
++    #[win32_derive::dllexport]
++    pub fn EnumPlayersAndGroups(_ctx:&mut Context,_this:u32,_players:u32,_count:u32,_flags:u32)->u32 {NOTIMPL}
++    #[win32_derive::dllexport]
++    pub fn EnumGroupMembers(_ctx:&mut Context,_this:u32,_group:u32,_players:u32,_count:u32,_flags:u32)->u32 {NOTIMPL}
++    #[win32_derive::dllexport]
++    pub fn GetPeerAddress(_ctx:&mut Context,_this:u32,_player:u32,_address:u32,_flags:u32)->u32 {NOTIMPL}
++    #[win32_derive::dllexport]
++    pub fn GetLocalHostAddresses(_ctx:&mut Context,_this:u32,_addresses:u32,_count:u32,_flags:u32)->u32 {NOTIMPL}
++    #[win32_derive::dllexport]
++    pub fn DestroyPeer(_ctx:&mut Context,_this:u32,_player:u32,_data:u32,_size:u32,_flags:u32)->u32 {NOTIMPL}
++    #[win32_derive::dllexport]
++    pub fn GetGroupContext(_ctx:&mut Context,_this:u32,_group:u32,_context:u32,_flags:u32)->u32 {NOTIMPL}
++    #[win32_derive::dllexport]
++    pub fn GetCaps(_ctx:&mut Context,_this:u32,_caps:u32,_flags:u32)->u32 {NOTIMPL}
++    #[win32_derive::dllexport]
++    pub fn SetCaps(_ctx:&mut Context,_this:u32,_caps:u32,_flags:u32)->u32 {NOTIMPL}
++    #[win32_derive::dllexport]
++    pub fn SetSPCaps(_ctx:&mut Context,_this:u32,_provider:u32,_caps:u32,_flags:u32)->u32 {NOTIMPL}
++    #[win32_derive::dllexport]
++    pub fn GetConnectionInfo(_ctx:&mut Context,_this:u32,_player:u32,_info:u32,_flags:u32)->u32 {NOTIMPL}
++    #[win32_derive::dllexport]
++    pub fn RegisterLobby(_ctx:&mut Context,_this:u32,_handle:u32,_lobby:u32,_flags:u32)->u32 {NOTIMPL}
++    #[win32_derive::dllexport]
++    pub fn TerminateSession(_ctx:&mut Context,_this:u32,_data:u32,_size:u32,_flags:u32)->u32 {NOTIMPL}
++}
++
++pub mod IDirectPlay8Address {
++    use super::*;
++    pub static mut VTABLE:u32=0;
++    pub const VTABLE_ENTRIES:[&str;22]=[
++        "QueryInterface","AddRef","Release","BuildFromURLW","BuildFromURLA","Duplicate","SetEqual","IsEqual","Clear",
++        "GetURLW","GetURLA","GetSP","GetUserData","SetSP","SetUserData","GetNumComponents","GetComponentByName",
++        "GetComponentByIndex","AddComponent","GetDevice","SetDevice","BuildFromDirectPlay4Address",
++    ];
++    #[win32_derive::dllexport]
++    pub fn QueryInterface(ctx:&mut Context,this:u32,iid:u32,out:u32)->u32 {
++        if !valid(ctx,iid,16)||!valid(ctx,out,4) {return POINTER;}
++        ctx.memory.write::<u32>(out,0);let iid=ctx.memory.read::<GUID>(iid);
++        if iid!=IID_ADDRESS&&iid!=IID_UNKNOWN {return NOINTERFACE;}
++        if AddRef(ctx,this)==0 {return INVALID;}
++        ctx.memory.write::<u32>(out,this);OK
++    }
++    #[win32_derive::dllexport]
++    pub fn AddRef(_ctx:&mut Context,this:u32)->u32 {
++        let mut s=state();let Some(a)=s.addresses.get_mut(&this) else {return 0;};a.refs=a.refs.saturating_add(1);a.refs
++    }
++    #[win32_derive::dllexport]
++    pub fn Release(ctx:&mut Context,this:u32)->u32 {
++        let remaining={let mut s=state();let Some(a)=s.addresses.get_mut(&this) else {return 0;};a.refs-=1;let n=a.refs;if n==0 {s.addresses.remove(&this);}n};
++        if remaining==0 {free(ctx,this);}remaining
++    }
++    #[win32_derive::dllexport]
++    pub fn Duplicate(ctx:&mut Context,this:u32,out:u32)->u32 {
++        if !valid(ctx,out,4) {return POINTER;}ctx.memory.write::<u32>(out,0);
++        let Some(a)=state().addresses.get(&this).cloned() else {return INVALID;};
++        let p=new_address(ctx,a);ctx.memory.write::<u32>(out,p);OK
++    }
++    #[win32_derive::dllexport]
++    pub fn SetEqual(_ctx:&mut Context,this:u32,other:u32)->u32 {
++        let mut s=state();let Some(mut source)=s.addresses.get(&other).cloned() else {return INVALID;};
++        let Some(dest)=s.addresses.get_mut(&this) else {return INVALID;};source.refs=dest.refs;*dest=source;OK
++    }
++    #[win32_derive::dllexport]
++    pub fn IsEqual(_ctx:&mut Context,this:u32,other:u32)->u32 {
++        let s=state();let Some(mut a)=s.addresses.get(&this).cloned() else {return INVALID;};
++        let Some(b)=s.addresses.get(&other) else {return INVALID;};a.refs=b.refs;
++        if &a==b {0x00158005}else {0x0015800a}
++    }
++    #[win32_derive::dllexport]
++    pub fn Clear(_ctx:&mut Context,this:u32)->u32 {
++        let mut s=state();let Some(a)=s.addresses.get_mut(&this) else {return INVALID;};*a=Address {refs:a.refs,..Default::default()};OK
++    }
++    #[win32_derive::dllexport]
++    pub fn SetSP(ctx:&mut Context,this:u32,provider:u32)->u32 {
++        let provider=match guid(ctx,provider) {Ok(g)=>g,Err(e)=>return e};
++        if provider!=TCPIP {return NOTIMPL;}
++        let mut s=state();let Some(a)=s.addresses.get_mut(&this) else {return INVALID;};a.provider=Some(provider);OK
++    }
++    #[win32_derive::dllexport]
++    pub fn GetSP(ctx:&mut Context,this:u32,out:u32)->u32 {
++        if !valid(ctx,out,16) {return POINTER;}
++        let s=state();let Some(a)=s.addresses.get(&this) else {return INVALID;};
++        let Some(provider)=a.provider else {return 0x80158180;};put(ctx,out,&provider);OK
++    }
++    #[win32_derive::dllexport]
++    pub fn SetDevice(ctx:&mut Context,this:u32,device:u32)->u32 {
++        let device=match guid(ctx,device) {Ok(g)=>g,Err(e)=>return e};
++        let mut s=state();let Some(a)=s.addresses.get_mut(&this) else {return INVALID;};a.device=Some(device);OK
++    }
++    #[win32_derive::dllexport]
++    pub fn GetDevice(ctx:&mut Context,this:u32,out:u32)->u32 {
++        if !valid(ctx,out,16) {return POINTER;}
++        let s=state();let Some(a)=s.addresses.get(&this) else {return INVALID;};
++        let Some(device)=a.device else {return 0x80158180;};put(ctx,out,&device);OK
++    }
++    #[win32_derive::dllexport]
++    pub fn SetUserData(ctx:&mut Context,this:u32,input:u32,len:u32)->u32 {
++        if len>4096 {return INVALID;}
++        let data=match bytes(ctx,input,len as usize) {Ok(b)=>b,Err(e)=>return e};
++        let mut s=state();let Some(a)=s.addresses.get_mut(&this) else {return INVALID;};a.user_data=data;OK
++    }
++    #[win32_derive::dllexport]
++    pub fn GetUserData(ctx:&mut Context,this:u32,out:u32,size:u32)->u32 {
++        let Some(a)=state().addresses.get(&this).cloned() else {return INVALID;};copy_out(ctx,&a.user_data,out,size)
++    }
++    #[win32_derive::dllexport]
++    pub fn AddComponent(ctx:&mut Context,this:u32,name:u32,input:u32,len:u32,kind:u32)->u32 {
++        let name=match wide(ctx,name) {Ok(n) if !n.is_empty()=>n,Ok(_)=>return INVALID,Err(e)=>return e};
++        if len>4096||!matches!(kind,1..=5)||(kind==2&&len!=4)||(kind==3&&len!=16) {return INVALID;}
++        let data=match bytes(ctx,input,len as usize) {Ok(d)=>d,Err(e)=>return e};
++        if kind==1&&(len<2||len%2!=0||data[data.len()-2..]!=[0,0]) {return INVALID;}
++        if kind==5&&(len==0||data.last()!=Some(&0)) {return INVALID;}
++        let mut s=state();let Some(a)=s.addresses.get_mut(&this) else {return INVALID;};
++        if let Some(component)=a.components.iter_mut().find(|c|c.0==name) {*component=(name,kind,data);}
++        else {if a.components.len()>=16 {return FAIL;}a.components.push((name,kind,data));}OK
++    }
++    #[win32_derive::dllexport]
++    pub fn GetNumComponents(ctx:&mut Context,this:u32,out:u32)->u32 {
++        if !valid(ctx,out,4) {return POINTER;}
++        let s=state();let Some(a)=s.addresses.get(&this) else {return INVALID;};ctx.memory.write::<u32>(out,a.components.len() as u32);OK
++    }
++    #[win32_derive::dllexport]
++    pub fn GetComponentByName(ctx:&mut Context,this:u32,name:u32,out:u32,size:u32,kind:u32)->u32 {
++        if !valid(ctx,kind,4) {return POINTER;}
++        let name=match wide(ctx,name) {Ok(n)=>n,Err(e)=>return e};
++        let component=state().addresses.get(&this).and_then(|a|a.components.iter().find(|c|c.0==name).cloned());
++        let Some((_,datatype,data))=component else {return 0x80158180;};
++        ctx.memory.write::<u32>(kind,datatype);copy_out(ctx,&data,out,size)
++    }
++    #[win32_derive::dllexport]
++    pub fn GetComponentByIndex(ctx:&mut Context,this:u32,index:u32,name:u32,name_len:u32,out:u32,size:u32,kind:u32)->u32 {
++        if !valid(ctx,kind,4)||!valid(ctx,name_len,4)||!valid(ctx,size,4) {return POINTER;}
++        let component=state().addresses.get(&this).and_then(|a|a.components.get(index as usize).cloned());
++        let Some((label,datatype,data))=component else {return 0x80158180;};let label=utf16(&label);
++        let chars=ctx.memory.read::<u32>(name_len) as usize;let capacity=ctx.memory.read::<u32>(size) as usize;
++        ctx.memory.write::<u32>(name_len,(label.len()/2) as u32);ctx.memory.write::<u32>(size,data.len() as u32);ctx.memory.write::<u32>(kind,datatype);
++        if name==0||out==0||chars<label.len()/2||capacity<data.len() {return SMALL;}
++        if !valid(ctx,name,label.len())||!valid(ctx,out,data.len()) {return POINTER;}
++        put(ctx,name,&label);put(ctx,out,&data);OK
++    }
++    #[win32_derive::dllexport]
++    pub fn BuildFromURLW(_ctx:&mut Context,_this:u32,_url:u32)->u32 {NOTIMPL}
++    #[win32_derive::dllexport]
++    pub fn BuildFromURLA(_ctx:&mut Context,_this:u32,_url:u32)->u32 {NOTIMPL}
++    #[win32_derive::dllexport]
++    pub fn GetURLW(_ctx:&mut Context,_this:u32,_url:u32,_chars:u32)->u32 {NOTIMPL}
++    #[win32_derive::dllexport]
++    pub fn GetURLA(_ctx:&mut Context,_this:u32,_url:u32,_chars:u32)->u32 {NOTIMPL}
++    #[win32_derive::dllexport]
++    pub fn BuildFromDirectPlay4Address(_ctx:&mut Context,_this:u32,_address:u32,_size:u32)->u32 {NOTIMPL}
++}
++
++#[cfg(test)]
++mod tests {
++    use super::*;
++    fn ctx()->Context {Context {cpu:Default::default(),thread_handle:1,thread_id:1,
++        memory:runtime::Memory::leak_new(16384),blocks:&[],cache:Default::default(),recent:[Context::return_from_x86;4]}}
++    #[test]
++    fn validates_event_payload_and_original_sender_and_length() {
++        let packet=[2,2,0,0,0,3,0,9,8,7];
++        assert!(packet_valid(&packet,2));assert!(!packet_valid(&packet,1));assert!(!packet_valid(&packet[..9],2));
++        let mut event_bytes=Vec::new();for word in [5u32,2,0,0] {event_bytes.extend_from_slice(&word.to_le_bytes());}
++        event_bytes.extend_from_slice(&packet);assert!(event(&event_bytes).is_some());
++        event_bytes[4]=1;assert!(event(&event_bytes).is_none());
++        let mut create=vec![0;16];create[0]=1;create[4]=1;create[8]=6;create.extend_from_slice("城之内".as_bytes());
++        assert!(event(&create).is_some());create.push(0);assert!(event(&create).is_none());
++        assert!(event(&[0;15]).is_none());
++    }
++    #[test]
++    fn peer_info_sizes_utf16_and_publishes_metadata_before_callback() {
++        let mut ctx=ctx();let this=0xface0001;
++        state().peers.insert(this,Peer {refs:1,transport:123,players:HashMap::from([(2,Player {name:"城之内".to_string(),flags:2,context:0})]),..Default::default()});
++        ctx.memory.write::<u32>(0x1000,0);
++        assert_eq!(IDirectPlay8Peer::GetPeerInfo(&mut ctx,this,2,0,0x1000,0),SMALL);
++        assert_eq!(ctx.memory.read::<u32>(0x1000),32);
++        ctx.memory.write::<u32>(0x1100,24);
++        assert_eq!(IDirectPlay8Peer::GetPeerInfo(&mut ctx,this,2,0x1100,0x1000,0),OK);
++        assert_eq!(ctx.memory.read::<u32>(0x1108),0x1118);
++        assert_eq!(wide(&ctx,0x1118),Ok("城之内".to_string()));
++        assert_eq!(ctx.memory.read::<u32>(0x1114),2);
++        assert_eq!(IDirectPlay8Peer::GetPeerInfo(&mut ctx,this,3,0,0x1000,0),INVALID_PLAYER);
++        state().peers.remove(&this);
++    }
++    #[test]
++    fn address_components_copy_inputs_and_report_required_buffer_sizes() {
++        let mut ctx=ctx();let this=0xface0002;state().addresses.insert(this,Address {refs:1,..Default::default()});
++        put(&mut ctx,0x1000,&utf16("port"));ctx.memory.write::<u32>(0x1100,6073);
++        assert_eq!(IDirectPlay8Address::AddComponent(&mut ctx,this,0x1000,0x1100,4,2),OK);
++        ctx.memory.write::<u32>(0x1100,1);ctx.memory.write::<u32>(0x1200,0);
++        assert_eq!(IDirectPlay8Address::GetComponentByName(&mut ctx,this,0x1000,0,0x1200,0x1300),SMALL);
++        assert_eq!(ctx.memory.read::<u32>(0x1200),4);assert_eq!(ctx.memory.read::<u32>(0x1300),2);
++        assert_eq!(IDirectPlay8Address::GetComponentByName(&mut ctx,this,0x1000,0x1100,0x1200,0x1300),OK);
++        assert_eq!(ctx.memory.read::<u32>(0x1100),6073);
++        state().addresses.remove(&this);
++    }
++}
+diff --git a/win32/winapi/src/gdi32/dib_1bpp_reference.txt b/win32/winapi/src/gdi32/dib_1bpp_reference.txt
+new file mode 100644
+index 0000000..4751972
+--- /dev/null
++++ b/win32/winapi/src/gdi32/dib_1bpp_reference.txt
+@@ -0,0 +1,18 @@
++M 00000000 00000003 24 80 f0 00 38 22 0c 00 38 22 0c 00 24 80 f0 00 38 22 0c 00 24 80 f0 00 24 80 f0 00 38 22 0c 00 24 80 f0 00 38 22 0c 00 24 80 f0 00 38 22 0c 00 38 22 0c 00 aa aa aa aa aa aa aa aa aa aa aa aa 38 22 0c 00 24 80 f0 00 24 80 f0 00 38 22 0c 00 38 22 0c 00 38 22 0c 00 24 80 f0 00 24 80 f0 00 38 22 0c 00 24 80 f0 00 38 22 0c 00 24 80 f0 00 38 22 0c 00 aa aa aa aa aa aa aa aa aa aa aa aa 24 80 f0 00 38 22 0c 00 24 80 f0 00 38 22 0c 00 38 22 0c 00 24 80 f0 00 38 22 0c 00 24 80 f0 00 24 80 f0 00 24 80 f0 00 38 22 0c 00 38 22 0c 00 24 80 f0 00 aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa
++M 00000001 00000003 24 80 f0 00 38 22 0c 00 24 80 f0 00 38 22 0c 00 38 22 0c 00 24 80 f0 00 38 22 0c 00 24 80 f0 00 24 80 f0 00 24 80 f0 00 38 22 0c 00 38 22 0c 00 24 80 f0 00 aa aa aa aa aa aa aa aa aa aa aa aa 38 22 0c 00 24 80 f0 00 24 80 f0 00 38 22 0c 00 38 22 0c 00 38 22 0c 00 24 80 f0 00 24 80 f0 00 38 22 0c 00 24 80 f0 00 38 22 0c 00 24 80 f0 00 38 22 0c 00 aa aa aa aa aa aa aa aa aa aa aa aa 24 80 f0 00 38 22 0c 00 38 22 0c 00 24 80 f0 00 38 22 0c 00 24 80 f0 00 24 80 f0 00 38 22 0c 00 24 80 f0 00 38 22 0c 00 24 80 f0 00 38 22 0c 00 38 22 0c 00 aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa
++M 00000002 00000003 38 22 0c 00 38 22 0c 00 24 80 f0 00 38 22 0c 00 24 80 f0 00 24 80 f0 00 38 22 0c 00 24 80 f0 00 38 22 0c 00 24 80 f0 00 38 22 0c 00 38 22 0c 00 aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa 24 80 f0 00 24 80 f0 00 38 22 0c 00 38 22 0c 00 38 22 0c 00 24 80 f0 00 24 80 f0 00 38 22 0c 00 24 80 f0 00 38 22 0c 00 24 80 f0 00 38 22 0c 00 aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa 38 22 0c 00 24 80 f0 00 38 22 0c 00 38 22 0c 00 24 80 f0 00 38 22 0c 00 24 80 f0 00 24 80 f0 00 24 80 f0 00 38 22 0c 00 38 22 0c 00 24 80 f0 00 aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa
++M 00000003 00000003 38 22 0c 00 24 80 f0 00 38 22 0c 00 38 22 0c 00 24 80 f0 00 38 22 0c 00 24 80 f0 00 24 80 f0 00 24 80 f0 00 38 22 0c 00 38 22 0c 00 24 80 f0 00 aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa 24 80 f0 00 24 80 f0 00 38 22 0c 00 38 22 0c 00 38 22 0c 00 24 80 f0 00 24 80 f0 00 38 22 0c 00 24 80 f0 00 38 22 0c 00 24 80 f0 00 38 22 0c 00 aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa 38 22 0c 00 38 22 0c 00 24 80 f0 00 38 22 0c 00 24 80 f0 00 24 80 f0 00 38 22 0c 00 24 80 f0 00 38 22 0c 00 24 80 f0 00 38 22 0c 00 38 22 0c 00 aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa
++M 00000004 00000003 38 22 0c 00 24 80 f0 00 38 22 0c 00 24 80 f0 00 38 22 0c 00 38 22 0c 00 aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa 24 80 f0 00 38 22 0c 00 24 80 f0 00 38 22 0c 00 24 80 f0 00 38 22 0c 00 aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa 24 80 f0 00 24 80 f0 00 24 80 f0 00 38 22 0c 00 38 22 0c 00 24 80 f0 00 aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa
++M 00000005 00000003 24 80 f0 00 24 80 f0 00 38 22 0c 00 38 22 0c 00 24 80 f0 00 aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa 38 22 0c 00 24 80 f0 00 38 22 0c 00 24 80 f0 00 38 22 0c 00 aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa 24 80 f0 00 38 22 0c 00 24 80 f0 00 38 22 0c 00 38 22 0c 00 aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa
++M 00000006 00000003 38 22 0c 00 24 80 f0 00 38 22 0c 00 38 22 0c 00 aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa 24 80 f0 00 38 22 0c 00 24 80 f0 00 38 22 0c 00 aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa
++M 00000007 00000003 24 80 f0 00 38 22 0c 00 38 22 0c 00 24 80 f0 00 aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa 24 80 f0 00 38 22 0c 00 24 80 f0 00 38 22 0c 00 aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa
++M 00000008 00000003 38 22 0c 00 38 22 0c 00 38 22 0c 00 24 80 f0 00 24 80 f0 00 38 22 0c 00 24 80 f0 00 38 22 0c 00 24 80 f0 00 38 22 0c 00 aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa 38 22 0c 00 38 22 0c 00 24 80 f0 00 38 22 0c 00 24 80 f0 00 24 80 f0 00 24 80 f0 00 38 22 0c 00 38 22 0c 00 24 80 f0 00 aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa
++M 00000009 00000003 aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa 24 80 f0 00 24 80 f0 00 aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa 24 80 f0 00 38 22 0c 00
++M 0000000a 00000002 38 22 0c 00 24 80 f0 00 24 80 f0 00 38 22 0c 00 38 22 0c 00 38 22 0c 00 24 80 f0 00 24 80 f0 00 38 22 0c 00 24 80 f0 00 38 22 0c 00 24 80 f0 00 38 22 0c 00 aa aa aa aa aa aa aa aa aa aa aa aa 24 80 f0 00 38 22 0c 00 24 80 f0 00 38 22 0c 00 38 22 0c 00 24 80 f0 00 38 22 0c 00 24 80 f0 00 24 80 f0 00 24 80 f0 00 38 22 0c 00 38 22 0c 00 24 80 f0 00 aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa
++M 0000000b 00000002 24 80 f0 00 38 22 0c 00 24 80 f0 00 38 22 0c 00 38 22 0c 00 24 80 f0 00 38 22 0c 00 24 80 f0 00 24 80 f0 00 24 80 f0 00 38 22 0c 00 38 22 0c 00 24 80 f0 00 aa aa aa aa aa aa aa aa aa aa aa aa 38 22 0c 00 24 80 f0 00 24 80 f0 00 38 22 0c 00 38 22 0c 00 38 22 0c 00 24 80 f0 00 24 80 f0 00 38 22 0c 00 24 80 f0 00 38 22 0c 00 24 80 f0 00 38 22 0c 00 aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa
++M 0000000c 00000002 24 80 f0 00 24 80 f0 00 38 22 0c 00 38 22 0c 00 38 22 0c 00 24 80 f0 00 24 80 f0 00 38 22 0c 00 24 80 f0 00 38 22 0c 00 24 80 f0 00 38 22 0c 00 aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa 38 22 0c 00 24 80 f0 00 38 22 0c 00 38 22 0c 00 24 80 f0 00 38 22 0c 00 24 80 f0 00 24 80 f0 00 24 80 f0 00 38 22 0c 00 38 22 0c 00 24 80 f0 00 aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa
++M 0000000d 00000002 38 22 0c 00 24 80 f0 00 38 22 0c 00 38 22 0c 00 24 80 f0 00 38 22 0c 00 24 80 f0 00 24 80 f0 00 24 80 f0 00 38 22 0c 00 38 22 0c 00 24 80 f0 00 aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa 24 80 f0 00 24 80 f0 00 38 22 0c 00 38 22 0c 00 38 22 0c 00 24 80 f0 00 24 80 f0 00 38 22 0c 00 24 80 f0 00 38 22 0c 00 24 80 f0 00 38 22 0c 00 aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa
++M 0000000e 00000003 aa aa aa aa 24 80 f0 00 38 22 0c 00 38 22 0c 00 24 80 f0 00 38 22 0c 00 24 80 f0 00 24 80 f0 00 38 22 0c 00 24 80 f0 00 38 22 0c 00 24 80 f0 00 38 22 0c 00 38 22 0c 00 aa aa aa aa aa aa aa aa aa aa aa aa 38 22 0c 00 24 80 f0 00 24 80 f0 00 38 22 0c 00 38 22 0c 00 38 22 0c 00 24 80 f0 00 24 80 f0 00 38 22 0c 00 24 80 f0 00 38 22 0c 00 24 80 f0 00 38 22 0c 00 aa aa aa aa aa aa aa aa aa aa aa aa 24 80 f0 00 38 22 0c 00 24 80 f0 00 38 22 0c 00 38 22 0c 00 24 80 f0 00 38 22 0c 00 24 80 f0 00 24 80 f0 00 24 80 f0 00 38 22 0c 00 38 22 0c 00 24 80 f0 00 aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa
++M 0000000f 00000000 aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa
++M 00000010 00000000 aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa
++M 00000011 00000005 24 80 f0 00 38 22 0c 00 38 22 0c 00 24 80 f0 00 38 22 0c 00 24 80 f0 00 24 80 f0 00 38 22 0c 00 24 80 f0 00 38 22 0c 00 24 80 f0 00 38 22 0c 00 38 22 0c 00 aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa
 diff --git a/win32/winapi/src/gdi32/dib_reference.txt b/win32/winapi/src/gdi32/dib_reference.txt
 new file mode 100644
 index 0000000..a2e7561
@@ -9701,685 +10728,29 @@ index 0000000..a2e7561
 +D 0000000f 00000003 aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa
 +D 00000010 00000000 aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa
 +D 00000011 00000000 aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa
-diff --git a/win32/winapi/src/kernel32/sync.rs b/win32/winapi/src/kernel32/sync.rs
+diff --git a/win32/winapi/src/gdi32/display.rs b/win32/winapi/src/gdi32/display.rs
 new file mode 100644
-index 0000000..93ceb79
+index 0000000..dc0c41e
 --- /dev/null
-+++ b/win32/winapi/src/kernel32/sync.rs
-@@ -0,0 +1,134 @@
-+//! Recursive, thread-owned Win32 critical sections. The guest object is opaque.
-+//! WASM worker creation is not supported yet; contention must not become a no-op.
-+use std::sync::{Arc, Condvar, Mutex, atomic::{AtomicI32, Ordering}};
-+use runtime::Context;
-+use crate::{Ptr, kernel32::lock};
-+
-+#[derive(Default)]
-+struct Ownership { thread: u32, depth: u32 }
-+
-+#[derive(Default)]
-+pub struct CriticalSection { owner: Mutex<Ownership>, released: Condvar }
-+
-+impl CriticalSection {
-+    fn enter(&self, thread: u32) {
-+        assert_ne!(thread, 0);
-+        let mut owner = self.owner.lock().unwrap();
-+        while owner.thread != 0 && owner.thread != thread {
-+            owner = self.released.wait(owner).unwrap();
-+        }
-+        owner.thread = thread;
-+        owner.depth = owner.depth.checked_add(1).expect("critical section recursion overflow");
-+    }
-+    fn leave(&self, thread: u32) {
-+        let mut owner = self.owner.lock().unwrap();
-+        assert_eq!(owner.thread, thread, "critical section released by non-owner");
-+        assert_ne!(owner.depth, 0);
-+        owner.depth -= 1;
-+        if owner.depth == 0 { owner.thread = 0; self.released.notify_one(); }
-+    }
-+}
-+
-+fn section(addr: u32) -> Arc<CriticalSection> {
-+    lock().critical_sections.get(&addr).expect("uninitialized critical section").clone()
-+}
-+
-+#[win32_derive::dllexport]
-+pub fn InitializeCriticalSection(ctx: &mut Context, lpCriticalSection: Ptr<()>) {
-+    assert!(lpCriticalSection.addr >= 0x1000);
-+    let mut state = lock();
-+    assert!(!state.critical_sections.contains_key(&lpCriticalSection.addr), "critical section initialized twice");
-+    // 32-bit RTL_CRITICAL_SECTION is 24 bytes; applications must not inspect it.
-+    ctx.memory[lpCriticalSection.addr..][..24].fill(0);
-+    ctx.memory.write::<i32>(lpCriticalSection.addr + 4, -1);
-+    state.critical_sections.insert(lpCriticalSection.addr, Arc::new(CriticalSection::default()));
-+}
-+
-+#[win32_derive::dllexport]
-+pub fn EnterCriticalSection(ctx: &mut Context, lpCriticalSection: Ptr<()>) {
-+    section(lpCriticalSection.addr).enter(ctx.thread_id);
-+}
-+
-+#[win32_derive::dllexport]
-+pub fn LeaveCriticalSection(ctx: &mut Context, lpCriticalSection: Ptr<()>) {
-+    section(lpCriticalSection.addr).leave(ctx.thread_id);
-+}
-+
-+#[win32_derive::dllexport]
-+pub fn DeleteCriticalSection(_ctx: &mut Context, lpCriticalSection: Ptr<()>) {
-+    let mut state = lock();
-+    let section = state.critical_sections.get(&lpCriticalSection.addr).expect("uninitialized critical section");
-+    assert_eq!(section.owner.lock().unwrap().depth, 0, "deleting owned critical section");
-+    state.critical_sections.remove(&lpCriticalSection.addr);
-+}
-+
-+fn atomic_long(ctx: &mut Context, addr: u32) -> &AtomicI32 {
-+    assert!(addr >= 0x1000 && addr % 4 == 0, "invalid interlocked LONG address");
-+    let bytes = &mut ctx.memory.bytes[addr as usize..][..4];
-+    let ptr = bytes.as_mut_ptr().cast::<i32>();
-+    assert_eq!(ptr.align_offset(std::mem::align_of::<AtomicI32>()), 0);
-+    // Guest interlocked addresses use only atomic access during this operation.
-+    unsafe { AtomicI32::from_ptr(ptr) }
-+}
-+
-+#[win32_derive::dllexport]
-+pub fn InterlockedExchange(ctx: &mut Context, Target: Ptr<i32>, Value: i32) -> i32 {
-+    atomic_long(ctx, Target.addr).swap(Value, Ordering::SeqCst)
-+}
-+
-+#[win32_derive::dllexport]
-+pub fn InterlockedIncrement(ctx: &mut Context, Addend: Ptr<i32>) -> i32 {
-+    atomic_long(ctx, Addend.addr).fetch_add(1, Ordering::SeqCst).wrapping_add(1)
-+}
-+
-+#[win32_derive::dllexport]
-+pub fn InterlockedDecrement(ctx: &mut Context, Addend: Ptr<i32>) -> i32 {
-+    atomic_long(ctx, Addend.addr).fetch_sub(1, Ordering::SeqCst).wrapping_sub(1)
-+}
-+
-+#[cfg(test)]
-+mod tests {
-+    use super::*;
-+    #[test]
-+    fn interlocked_returns_previous_exchange_and_new_wrapping_arithmetic() {
-+        let mut ctx = Context { cpu: Default::default(), thread_handle: 1, thread_id: 1,
-+            memory: runtime::Memory::leak_new(8192), blocks: &[], cache: Default::default(),
-+            recent: [Context::return_from_x86; 4] };
-+        ctx.memory.write::<i32>(0x1000, i32::MAX);
-+        assert_eq!(InterlockedIncrement(&mut ctx, Ptr::new(0x1000)), i32::MIN);
-+        assert_eq!(InterlockedDecrement(&mut ctx, Ptr::new(0x1000)), i32::MAX);
-+        assert_eq!(InterlockedExchange(&mut ctx, Ptr::new(0x1000), -7), i32::MAX);
-+        assert_eq!(ctx.memory.read::<i32>(0x1000), -7);
-+    }
-+    #[test]
-+    fn recursive_release_retains_ownership_until_last_leave() {
-+        let section = CriticalSection::default();
-+        section.enter(1); section.enter(1); section.leave(1);
-+        let owner = section.owner.lock().unwrap();
-+        assert_eq!((owner.thread, owner.depth), (1, 1)); drop(owner);
-+        section.leave(1);
-+        let owner = section.owner.lock().unwrap(); assert_eq!((owner.thread, owner.depth), (0, 0));
-+    }
-+    #[test]
-+    fn competing_threads_cannot_overlap() {
-+        let section = Arc::new(CriticalSection::default());
-+        let value = Arc::new(std::sync::atomic::AtomicU32::new(0));
-+        let threads: Vec<_> = (1..=4).map(|id| {
-+            let section = section.clone(); let value = value.clone();
-+            std::thread::spawn(move || {
-+                for _ in 0..500 {
-+                    section.enter(id); section.enter(id);
-+                    let old = value.load(std::sync::atomic::Ordering::Relaxed);
-+                    std::thread::yield_now();
-+                    value.store(old + 1, std::sync::atomic::Ordering::Relaxed);
-+                    section.leave(id); section.leave(id);
-+                }
-+            })
-+        }).collect();
-+        for thread in threads { thread.join().unwrap(); }
-+        assert_eq!(value.load(std::sync::atomic::Ordering::Relaxed), 2000);
-+    }
-+    #[test]
-+    #[should_panic(expected = "critical section released by non-owner")]
-+    fn non_owner_cannot_release() { let section = CriticalSection::default(); section.enter(1); section.leave(2); }
-+}
-diff --git a/win32/winapi/src/kernel32/locale.rs b/win32/winapi/src/kernel32/locale.rs
-new file mode 100644
-index 0000000..a8cb301
---- /dev/null
-+++ b/win32/winapi/src/kernel32/locale.rs
-@@ -0,0 +1,111 @@
-+//! Installed locale profiles for the original game's browser environment.
-+//! This is not the complete Windows locale catalogue or editable user locale.
-+use runtime::Context;
-+use crate::{Ptr,kernel32::SetLastError};
-+#[path = "locale_data.rs"]
-+mod data;
-+const INSTALLED: &[u32] = &[0x0409,0x0411,0x0804];
-+
-+#[win32_derive::dllexport]
-+pub fn GetUserDefaultLCID(_ctx: &mut Context) -> u32 {0x0804}
-+
-+#[win32_derive::dllexport]
-+pub fn IsValidLocale(_ctx: &mut Context, Locale: u32, dwFlags: u32) -> bool {
-+    matches!(dwFlags,1|2) && INSTALLED.contains(&Locale)
-+}
-+
-+#[win32_derive::dllexport]
-+pub fn IsValidCodePage(_ctx: &mut Context, CodePage: u32) -> bool {
-+    runtime::Memory::code_page_encoding(CodePage).is_some()
-+}
-+
-+#[win32_derive::dllexport]
-+pub fn EnumSystemLocalesA(ctx: &mut Context, lpLocaleEnumProc: Ptr<()>, dwFlags: u32) -> bool {
-+    if lpLocaleEnumProc.addr == 0 {SetLastError(ctx,87); return false;}
-+    if !matches!(dwFlags,0|1|2) {SetLastError(ctx,1004); return false;}
-+    let previous = ctx.cpu.regs.esp;
-+    ctx.cpu.regs.esp = previous.checked_sub(16).unwrap(); let buffer = ctx.cpu.regs.esp;
-+    for locale in INSTALLED {
-+        let name = format!("{locale:08x}\0");
-+        ctx.memory[buffer..][..name.len()].copy_from_slice(name.as_bytes());
-+        let callback = ctx.indirect32(lpLocaleEnumProc.addr);
-+        ctx.call32_x86(callback,vec![buffer]);
-+        if ctx.cpu.regs.eax == 0 {break;}
-+    }
-+    ctx.cpu.regs.esp = previous; true
-+}
-+
-+fn info(ctx: &mut Context, Locale: u32, LCType: u32, addr: u32, capacity: i32, wide: bool) -> i32 {
-+    if capacity < 0 {SetLastError(ctx,87); return 0;}
-+    let locale = if matches!(Locale,0|0x400|0x800) {0x0804} else {Locale};
-+    if !INSTALLED.contains(&locale) {SetLastError(ctx,87); return 0;}
-+    let kind = LCType & 0xffff;
-+    if LCType & !(0xffff|0x20000000|0x40000000|0x80000000) != 0 {SetLastError(ctx,1004); return 0;}
-+    let number = LCType & 0x20000000 != 0;
-+    let mode = if number {if wide {3} else {4}} else if wide {0} else if LCType & 0x40000000 != 0 {2} else {1};
-+    let result = data::lookup(locale,kind,mode).unwrap_or_else(||
-+        panic!("Unprobed original locale field: LCID={locale:x} LCTYPE={kind:x}"));
-+    let bytes = match result {Ok(bytes)=>bytes,Err(error)=>{SetLastError(ctx,error);return 0;}};
-+    let count = (bytes.len()/if wide {2} else {1}) as i32;
-+    if capacity == 0 {return count;}
-+    if addr == 0 {SetLastError(ctx,87); return 0;}
-+    if capacity < count {SetLastError(ctx,122); return 0;}
-+    ctx.memory[addr..][..bytes.len()].copy_from_slice(bytes);
-+    count
-+}
-+
-+#[win32_derive::dllexport]
-+pub fn GetLocaleInfoA(ctx: &mut Context, Locale: u32, LCType: u32, lpLCData: Ptr<u8>, cchData: i32) -> i32 {
-+    info(ctx,Locale,LCType,lpLCData.addr,cchData,false)
-+}
-+#[win32_derive::dllexport]
-+pub fn GetLocaleInfoW(ctx: &mut Context, Locale: u32, LCType: u32, lpLCData: Ptr<u16>, cchData: i32) -> i32 {
-+    info(ctx,Locale,LCType,lpLCData.addr,cchData,true)
-+}
-+
-+#[cfg(test)]
-+mod tests {
-+    use super::*;
-+    #[test]
-+    fn locale_ansi_unicode_and_numeric_sizes_differ() {
-+        let mut ctx = Context {cpu:Default::default(),thread_handle:1,thread_id:1,
-+            memory:runtime::Memory::leak_new(16384),blocks:&[],cache:Default::default(),recent:[Context::return_from_x86;4]};
-+        ctx.cpu.regs.fs_base=0x3000;
-+        assert_eq!(GetLocaleInfoA(&mut ctx,0x411,0x1004,Ptr::new(0),0),4);
-+        assert_eq!(GetLocaleInfoA(&mut ctx,0,1,Ptr::new(0x1200),5),5);
-+        assert_eq!(ctx.memory.read_str(0x1200),"0804");
-+        assert_eq!(GetLocaleInfoW(&mut ctx,0x411,0x1004,Ptr::new(0x1000),4),4);
-+        assert_eq!(ctx.memory.read_wstr(0x1000).to_string_lossy(),"932");
-+        assert_eq!(GetLocaleInfoA(&mut ctx,0x411,0x20000001,Ptr::new(0x1100),4),4);
-+        assert_eq!(ctx.memory.read::<u32>(0x1100),0x411);
-+        assert_eq!(GetLocaleInfoW(&mut ctx,0x411,0x20000001,Ptr::new(0x1100),2),2);
-+        assert_eq!(GetLocaleInfoA(&mut ctx,0x411,0x20001001,Ptr::new(0x1100),4),0);
-+        assert_eq!(crate::kernel32::GetLastError(&mut ctx),1004);
-+    }
-+    #[test]
-+    fn reference_currency_encoding_and_binary_fields_are_preserved() {
-+        let mut ctx = Context {cpu:Default::default(),thread_handle:1,thread_id:1,
-+            memory:runtime::Memory::leak_new(16384),blocks:&[],cache:Default::default(),recent:[Context::return_from_x86;4]};
-+        ctx.cpu.regs.fs_base=0x3000;
-+        assert_eq!(GetLocaleInfoW(&mut ctx,0x411,0x14,Ptr::new(0x1000),2),2);
-+        assert_eq!(ctx.memory.read::<u16>(0x1000),0x00a5);
-+        assert_eq!(GetLocaleInfoA(&mut ctx,0x411,0x14,Ptr::new(0x1100),2),2);
-+        assert_eq!(ctx.memory.read::<u16>(0x1100),0x005c);
-+        let acp = data::lookup(0x411,0x14,2).unwrap().unwrap();
-+        assert_ne!(acp,&[0x5c,0]);
-+        assert_eq!(GetLocaleInfoA(&mut ctx,0x411,0x40000014,Ptr::new(0x1200),acp.len() as i32),acp.len() as i32);
-+        assert_eq!(&ctx.memory[0x1200..][..acp.len()],acp);
-+        assert_eq!(GetLocaleInfoW(&mut ctx,0x411,0x15,Ptr::new(0x1300),4),4);
-+        assert_eq!(ctx.memory.read_wstr(0x1300).to_string_lossy(),"JPY");
-+        assert_eq!(GetLocaleInfoW(&mut ctx,0x804,0x58,Ptr::new(0x1400),16),16);
-+        let wide_signature = ctx.memory[0x1400..][..32].to_vec();
-+        assert_eq!(GetLocaleInfoA(&mut ctx,0x804,0x58,Ptr::new(0x1500),32),32);
-+        assert_eq!(&ctx.memory[0x1500..][..32],wide_signature);
-+        ctx.memory.write::<u32>(0x1600,0xdeadbeef);
-+        assert_eq!(GetLocaleInfoW(&mut ctx,0x411,0x15,Ptr::new(0x1600),3),0);
-+        assert_eq!(crate::kernel32::GetLastError(&mut ctx),122);
-+        assert_eq!(ctx.memory.read::<u32>(0x1600),0xdeadbeef);
-+        assert_eq!(GetLocaleInfoA(&mut ctx,0x411,0x79,Ptr::new(0x1600),32),0);
-+        assert_eq!(crate::kernel32::GetLastError(&mut ctx),1004);
-+    }
-+}
-diff --git a/win32/winapi/src/kernel32/locale_data.rs b/win32/winapi/src/kernel32/locale_data.rs
-new file mode 100644
-index 0000000..58a1ed3
---- /dev/null
-+++ b/win32/winapi/src/kernel32/locale_data.rs
-@@ -0,0 +1,27 @@
-+//! Byte-preserving snapshot of canonical reference locale values.
-+//! Generated by games/joey/reverse/generate_locale_data.py, not a complete NLS DB.
-+const BYTES: &[u8] = include_bytes!("locale_data.bin");
-+fn u16_at(at: usize) -> u16 {u16::from_le_bytes(BYTES[at..at+2].try_into().unwrap())}
-+fn u32_at(at: usize) -> u32 {u32::from_le_bytes(BYTES[at..at+4].try_into().unwrap())}
-+
-+pub(super) fn lookup(locale: u32, kind: u32, mode: usize) -> Option<Result<&'static [u8], u32>> {
-+    assert!(mode < 5 && &BYTES[..4] == b"JLC1");
-+    let key = locale.checked_shl(16)? | kind;
-+    let (mut left, mut right) = (0, u32_at(4) as usize);
-+    while left < right {
-+        let mid = left + (right-left)/2;
-+        let at = 8 + mid*44;
-+        match key.cmp(&u32_at(at)) {
-+            std::cmp::Ordering::Less => right = mid,
-+            std::cmp::Ordering::Greater => left = mid+1,
-+            std::cmp::Ordering::Equal => {
-+                let row = at+4+mode*8;
-+                let error = u16_at(row+6) as u32;
-+                if error != 0 {return Some(Err(error));}
-+                let offset = u32_at(row) as usize;
-+                return Some(Ok(&BYTES[offset..offset+u16_at(row+4) as usize]));
-+            }
-+        }
-+    }
-+    None
-+}
-diff --git a/win32/winapi/src/kernel32/locale_data.bin b/win32/winapi/src/kernel32/locale_data.bin
-new file mode 100644
-index 0000000000000000000000000000000000000000..de3b6a5b656417a1dd5afdb8539d4fcb79e0fddf
-GIT binary patch
-literal 38558
-zcmds=3tUxYzW0}RMN>2{q^3K(fCh*Nh?g-hq-2UHXo_ZlfM5v7#Yj!bOwou)&CJZq
-z%zVvb<~WYW%CU0H(K2(aamp!ctUT5<&gAKJJXYuTTkH2I?sS}|Iq$sh=LOdO{?>ne
-z_u9{T*6rCFFT+O+>G^nV$EoEss(WFE;{-U4Q@_Y@>Vb{LK(H?6TZ*;e1|dhHmH-BU
-zX<`}ZIA7H<tOJ+1A*$sd*Rw#ZkZV{ME^{E9l^~z9R@^ApupV4yu5UAlO>nk|TUFmK
-z)`z<jxjmetU{ml@@eIiJ8a9B-%-22#a{U)Xr`U518^UGgdfS6sZ+9_Hu3;m%%<SL6
-zAp3WiI0EGBB#8lVQ<TSp+_qG4lIm$<W4M{fY;T@wg<^?VCN_aPN4Xs2dgqG^K=y;-
-zb#R&4t_nFz#7fnx#inqVE3cHZN?Z+cy@t);GIPCa<*XCe%QXyy%gk-t4DvZ!#qDwp
-zo5N+MvlHaD?Gj&6eUI1z?q22nat?@ZseV|z9_~@()>z+Zurc_bqEq6%UR|*z+=j|c
-zK(?W&7znZ-3|qlv=C%caY<GLnC)cnwTxL3*L9Vx}7%JDW4P0irVR9nGNV$eVaGBYL
-zIFQfjFAkJzcmrH!I`JUeFjP!XeT3K+Zjy3}oN?lK)hCJV;HD{O%E=aURL>LJ!!1-U
-zkuy^)Q+<wjBiwT31#%XO6(IM8VF$R(+_p+NRbsVV!;Wy7TfkihHUeJ|x63v3!DSAG
-za~y05o)PPoVg_w6ya_Hd+t3hX{|1OnR1Xw`;kHx`lG9dfuewj{1h=ztsGRO%nCg*Y
-zXSmVIadP^K{Z$_*c7YqOoFHeoI70O#u`ApZ<?(V-#Yw8Ci6L+^m2>1w6Z2Fr6hq;b
-zAlFA<%>wIy_le~o``54=TxPlp<t!E}<r;Q}%gpQfDzE|gjJQ#*;mvTFdC%Gj@?6>@
-z?w4yA2A7$~!EuoHg3rY>at*`bGV?gAJ<~hR8jCGKZku5QTxPa67-W09iIH**d%$Jp
-zdIy6%es333<Qhi8W#)P_K(04eER<{56D~8izYOGYJVz{-YZwKWnQn!gO0in5VK2DM
-zbXUq*Ev}Vo7!8-1?nXJA#jSD;W8gB=-6`i4agSWXSh&n|_se-pJS^9+H(X}A$K)Ir
-zPslZlgUifg=M2c_oD-dUFoS(;*at2%_gf2)`>mbWS*~GUxXex9M1nl#W5xb*4g0}m
-zrkfxqQB09**dH!4+c^p3K28%e<r@ABE;Enue30XvVzErF;Q+YIbmz-iBv#5byag_^
-zdv1d6xhZaxYd8=tGtakIK(2qEcv!CCAh^uj7bie&<0<isT*JX|ncZ`<Oy{Q95_Hc^
-zaR^-2=ysLULyVJS7!Q}3uRRcC|Hg|6at&{V%S<;(PKr2QuHjI)%yiS_WQsX*4Tr&H
-zrduedL@bkQm;jfVZn>NVVuf78+u$<Ot(LP~Tq)OZI9z7BYvrsLH_A1<9WFE7t#Y=D
-zJLMXVfXhsGkDR^Yez}Gt;WE=bEa#|rOs-)fTxPl_<eU^w$u%4WmznMvIcLRlat)K<
-zGIK0&9;^lamv{l>@!{O-aWvez$_+tx{2(>~c}yCPfy>P22g+$7wp2YxOorQD*(WDh
-z?5ujIm;yIUIZ{rP7_EAoI2LYy<$-bri}9)_h~wanP)?FFModwCym$xPNy=$*GQ>>P
-zbHwp*^N@Y$he~m?_!h`MGn@dInb*=IAjcZ-iO1v`rov^W`;nYa#FKIjC&Fds@$ePM
-zeR4)TE1nZ4!M%XYYjwj}-uj!0EkXCXBi;#@H6918K^{A8#2}Eb(_Wkm*N03uSWYLg
-zvz$=zF1TUHbR*>S5F_P8i)nD<kl7CdK=#=nF&<=l4b$N=(;Y5nq?jbvFas_#-Endz
-zh?C?RPJzozH$zUAm?PIP6D~8|d^t1361j$1aGB}Ol5?L}F4r&{E;HSQau$n~at)`#
-zWoG|Yf!uG8h}9tX+j21n?n-33tK>W>u9mY_%!Ruina9~?)wYV;LGBB~X>ghOT023m
-ze;3I8_o`gOyWui(+uo3~59D(X$TiG^%gp2VeUQ&NE`BQ4a5`LOI;TLs_Lt(<at-t0
-zGP9j$K=#>R#J_@U%eP_y-1EqEFUa{${9aD&+1_&s;nr6U0QsCIVpG*yh%?}}R&Fb&
-zz1TtZV6g~pS1k(#+1_qqcR3MaG2AHRNH`f_5I9R*3Ua?0mcV7^_O1Zg-j(7i)z^rn
-zaMvkskh4+Tr1}<dCfsexJLK#XcY$n!;XQDf*@oS6_JG`fZ^$()gUie@*Ka`{n;(jQ
-zlxuh|TxPo8XxY^`3oe&&y!Rc*v1jc$9vgscui<RC%<QX1AooRp*cjw?G!y5*y&jov
-zD><#jHgejD_rdLmO!p=^!D1&lA>v%PHzU&xmlGlOkkd<?2e&se-9B>qiv8r=B9_A)
-zg3Rr`7Vo!k=UccBShx!;+y^b(g%<823%A0;U2Nelv2Y)<a4Rj`hb`PH3-=KVx7xye
-z)WThA;V!dqms_}xS-2}K+{Z24l@{(37Vatw_el$PwT1hXg}cVWecHlZYvDd);jXiA
-zpS5t;Te#0zxEn0o=Plfg7H+LT?_S99Lo)7(9BWJzr|2GOSQ{>LdpPqze%AD`_$0{t
-zsbL+s%&k#<3FPmGUJ>7vYgiX9Gsh+Gf*hB;FMbGetnsl}5AGk8zW{l^{}1s?)&DHk
-zhx-jO+tBDfuMI85jv(7>*Z?jwKNIT(vMoOohsiZ;2$z}eL^)Yvfn38zaGALc#UR^T
-zD&C{|Y%u`tJmm-EJSZ+w{UNb2+((p`$$3nCT=gf#CUBotepb$N;`6G%AYKReMdhE%
-z`GxpP)n68y!u^$&y#{iO_`3LpoHxa0a1SDL``?yxNPI`mZ^b~kzf=AY<a7QYeysW*
-z#pZCoK<0a=Z$Q2;`kVNJoH}#8{%--d0Wy#AW~yB;wh`NzI^2%PJTH2Hd`@ri7Ldn|
-zVN1Bo+{Z&ew)a+XnCiESt>BK*ve6*>Y>b#J=MJ$o+=<9s-<@(Mi+9PHBDR4$6`5|X
-zoN40Satg#CxW&kHOXbWI?~yZGyaDb!WV-junJ+#dXOY+z?nB6QAC^-kJ|btC*beUF
-z$aJ5Ovr2qY&eLLhxX&WfeNN5>@p(Bfh&RH05t;5wa<+*-m-9=p1KgL9>AoswxA-eL
-zZ-^b?zKKltH*yY$2j#pY`r!T+na9Yrc$0-2Y~gmYa64PLT`b(L7H)`z8*1Tpvv9jx
-zxHnt4VHR$<g&Sev_ONgxE!>_KZj^=F%fgMeaAPdoT26EKJmy&74>+GWF8NgaLg)II
-zVr{s8M&|FcYR$uV0}K$a2YD?ptOJ*s_mp-Z?;9P(PI3+F!eyp=GsxfTMTvdn8rFl$
-z%zNN1AU|6gEZz$8b#4>u!ySpt`{o3Y&$&y?0@+@}25_0#hUp;JGeazuYuFGjGuJm8
-zWS^Cb56U%c1eclp`-q(7;u9cW=P5A&?lZ_-@ADwHZIk$Ka$XV}!~F#^+xx0&uZh1F
-ze<L=5`?m7CAg}Mg72gBd4~EylWoEm6FXuz?52}A6Hii3{@_)$rQv4Ih^%^#V%gpuu
-zMb0<kf66rsgv-or`wrxDYL$De2XeiJ&EYcBX#{fH8jII~tTz{1z-^^`14y@>c%$k!
-ziPyvJg3NJsKagYlq2g$e>m4h$ggZg`PLS)p3*`RG0NGx{R&bfQZPP%mCtoZA=^D0%
-z%S>k`$n}<qvp~9rZQwG~oeR<}7w3a?4TIn^vkgl?KBr1t3eq*a0WLG06(HBUQd|YH
-zzD8^dcb)PEknTotlj>W<c5t^T?~t=o+@<<%u|3?^mG{ZnFCI|+ka#29Bg*f~IVOGp
-za@!0$z-8t(d<3$+C&W)dx`rL$GPg$c9LVFL&ix*nf^-diaG8CmMu69YgTxe&uHj8^
-znc0T%Alr~CPEtKh42GMjoFiwNn5TN7*a>cla+#c2;vCh>#m;aSC|Af?B37ziEp~ys
-zTzRFORpM&Z*NR=?u2<eDXOp;D^{rwE-0jLc<?Iq)QGJgX3U@DZee~4<kk{XL#G@el
-z*RUI0X1X89`B*$D*RVTWW}X*cfxHiWBc7LQcr#pPy0zzfZX+=eWE%{_;4;$<lG9P_
-zD%UU^E;HQ-IWb~?xrPyNnd!#Mxm_G1*RTg%X1b|z(#0IPhLLcY=@!blN1Q9yuqRw*
-z9>4QJUh^IlE94qR!DXgfDd!P!sa(TeaGB|@kn@DNTCQO<TxPm!<vc5HkZTwNmznM+
-zIsYbZm1`IamznN%IlmNl$u;Z^mznNvIj@O(<r>DpWp<BWkk2_J9+7L<2QD++V{(p*
-zC*&ITh09F$b2+EQujLx{gUd|!tekV=1-XX(;WE>${eair`eFdcW8Ls)aGB`_%4sPE
-z$u%4Rmziz{Il*FAxrVpEWu_Y@CsK@-Yd8=tGu^&&28e^@8V-WX%wv5x$ZN?cF-5N7
-zV7Sb5C&@_{v*j8Nfy+!cUrw=DCf6_?E;EmVIbdyYu2`=60`XS370Q)zs>Ev5my1K;
-zu2fzvXN|a4_4VQ~xEqx>%h@7sReigd0C%VID{^*=dsN>m-UfHS@>_BaiHB7`Dh`Kx
-zO!>H+kHizIpA>J0drJ8$IbVxsR6i?@fO}5)f}HO~XMxx6b;Xfz8zS@AX$sZ>n~N>w
-z1c`}o+auErmeWNHl@lh8f*XlUH&#v`vA>*wViMeVWF7}Y!CK%jF+t7<aWvc{<rI+5
-z87Gbhd2Skxfy-PM)k$(Di)pH7ipg+ul=I}|i-oF}h$(Q(l;_BqE0(LiKpYFVLb*~-
-zl~}F%a&a8omCCE-tP$6$zFxco?ndR!a<+(DRo^a-hr1KmhkiIFo)d!}L=k;vH~}s*
-z_ge>$$HPrxXSs%{aGB|LmlG~V$~Bw_mzmdxIIu3*UmPgLi<96cAoG1}3dr@RifJI*
-zYj`JIW*!F_Adj6XVkXGf$q^^R%|oV}FQ-5(lv5(!1-A^D?kqX8#W`}y#Wc7Jlq*2?
-z*+XI#$o3kh!)0c>mdbfdTq)Nu11>Y&)pDK|*U2@U0+*TY208yr+$`5H6D~8|t#W=Y
-z?vQJk1(%ubE;+A?d*m8s!)2zsSI(Q_0l9`#;WD#--vYVc-WCsmT*nbH2k!gGbdSmT
-zz4(EgkHlQKpCa=(JFVK+;$K1T3&Uw}nfY4Zg4}O^6EDa$yc;evkHy*xz30>y13<3V
-zFb^)X57q7<f8Wqo94^;zI$Y-ZaFRf_Az2&;a=nK6aGBW;<3aY>1Thulc1#uv;ASAx
-z&6JZRX3Lo-7Q)R}E&}<S5^<*Lv&0#2=PJ*avp`&^`Vz4SZk3i*gKY1k;!-&)#A3Ls
-zkXyjn3^oOKiTgqJgJB6=W^V6WAlrLLJgoXru@vqx<>PWb5>KdpQk)6*l=4?{z824b
-zY=hxFaGBYLvmp1|{}#{7H7tY6%x!D3$a@dnMhphIUc-CgG6$d<re#;-EVx`oHx{f1
-z_7ex{xrVdhGPAD+gWMNG#CVX~ks!{2I|7+*qMT7;lAILrKDgtN>88q=C{B`-CeDSM
-ziA*<J&Qvi+PM$aqZXq(=B00rkiJUUA9PS)s_T#m9zlA&B!hOKPU0~rpXyGoja2Hv)
-z6&CJd3wMcy`;diOY2iL>;Z|9=k65_X7Ve`K?otbPnT5OD!hOubU18xqZsD%9aG$Vn
-zS6R4ETDYq%+@~zuH5TsE7VcUL_ZbU!orU|Xg}dIuea^z&VBtP*;cm2WYXy4uLXI`6
-za8Km#EFTxw>K<uW8!j{7XKe=SgWJTNat-UiW#(9RKgjX*Veyz;!@6*p>6`#Lwm2!C
-z62B7b!9AmV7Ucc@Tk)Lg7sUE-oeJ;o1q6W{BX$*|LEirj8^C35i)tcx9XL_Uk!#ox
-zE;HMi2XZV|AQs6rYy_8??o5#FEfZ&{K35EYJ70OBoC<M?>Q!Q6xJ#8+$XO|_Qhkls
-z1nxTJ4RSV$n^fN-UI%xZ@(wvW#a*iJ7MsF-UCZ`@93%c(+$ZON*bMF=WN!aqIq!-`
-z<h(Bi!u>$`BaqKIA%3d*=VEiXr;&L~ehc!Lydc(I?Dcznu?5@!WV)?Ey6weaIbFr;
-z;dV#nSUDQxSh<fl0OYY_*b*)?_witm?Tr_Qsy<w71vgR4l0f#^XmO03abjz@smNU4
-zBsq7AljUTHZQy1j)6J2SD^8P>F9yLaLZ(|Hr&OFNXO?&a+_}hf%jMiJ&X==LYzub@
-zGTll!4~tcDmWu7*u0W={QqB|NDmiP!_HfrB(_Js;IdOxWP2!Dkw;<EqD(59}o17hD
-z2e`YC>AoW8RdKhR*Ts%-_aW2WFXuPn0Xc_6AKW9zJVvg?n=IU53%8Sn+u6eHV&QhR
-za6>HIPz$%4h1=c2z1hMIvv9*L+z1P|hlLwy;r6s}qb%HB7H+hK8)M<ta_TnZ`OAC2
-zagg_bPsGnbUhhwfwc&n^+#a=nCEi#gNbCyoT3}cQE^|XvBS5YvN{p3jSQjoc$1d?8
-z|6Ii=F;%W%J-E!gucd(;mrN0}LB7s3u|C{<<XF_!gYCdyi64M$uVDkY%xv$cAlLJ`
-zcv`MuL%7Tw_nilufsG#W7zA>?hK=Ad2cQ}ZvVTLwFp#ekDF(oeM&`El1-WfM69>wP
-z7aPM(KxTWBR7(-Zi<87AaMP4CL0;dp#T=0BHM|ZkGuxFXCtoa7y+mvZw@i7CoVj8-
-z$n_dFgUihIE|9ZOtdMIM2$z}LRt@qw%f*#)4V%Mdrn4I4wyhD@s=i)q0e7SFW;t8L
-zt*UPquZO!6nSa*j5ZD;}y?7Gj>zxu?!u?A549NZVjrc9delTnWmzmr4J;?RcuJl+R
-zq-)q3E;F3~klWToY%15V4P0irE#$NmTgx>Jg3HV{bO8CBV6m%Q!yDi-)9DVf4Pj!0
-z>QQ1_xUtH8<@6T^s6JS12Y0CQa5*EyMAgTL?ct77PL(rBoUD3=cq80w<!N&A#C(wb
-zYuEuUGq<fsPKh{Eu3<;G%zO`70X7036<5hM^ucBJ!Py1!&wjlvo{(#J6I^Dt;UviZ
-z{aiey`d4Bw+%w8&<$NoiQ~iS239j?7x8AxS*IQp~sCpBzGu%MsmU3E)L8`YGyTJ7+
-zcb3yt3{^c$><TwhIa*Gv7^ixFF$C^F<#;(m#RSzyh@o(kka?XP2lARaQA`85j}5!Q
-zWu}`g=Wel3u3>k$%sem3zy{zvaiLtpo8dCkt&;PYxLU4Z7+hw$>*c&4Zj);m4wsqk
-zE;+A>`{f!&z-6X;SkCXnkK`KmfXhtxb2)z!&&oB7gv(6#f}A>4UVj9D>|ev4aGB}0
-zkaL6RlWQ0Smzi#;oE~DVT*F>)nduIYbE`N)u3<D>X1XbICW;wy4P)Rk)14+~hFB)o
-zFcvN|-EujL#45Rlz2P#`T_NWwalKr_IJnF_CO3gReqR)~%Qfr+mznM^IlmJ3$~Ei@
-zmznMXIq!%^<r?;b%S`tJIUkEB<r?;f%S`vQoIi_a<r@ABE;HTpa()o&K7t~S9m4@|
-zndt_A?1yGzOSy)(z-6Y}R!&E;vs}Z0aGB|Lm(xRxmTNc&E;HS}a&8gh<r)r#%glW|
-z0_61}Sxl8{I0P;;-3&RoVxe5ac(}}L!%UF<Fk38_Yj`VMX1WXIJS0}jH5>|;neGZX
-zPl{{h8V-ZYOm~Bv7sRb{4HMup)7>HGWpR&O!`t98)7>ZMpm<oW;c&Rjbl;crp?E^B
-z;q7pl>3%NfOYw|c!x3<q>3%EczeJ}RMI4icBjGaBtq*cvG!_Hp8YaSJ<~|Mrc|3F!
-zyUH~j1(%s_gq#?$zg)v4xXip~4*>c3*)8HgkYj~-aWvcn<q;sClPD&E+&058aGCl1
-z6glI>@v2V}li{W*XUfSIb5ze0Q{WaVm&lnZmZ?5R91FKxd4ZgTVuk9J;yAd~%FE@f
-z5Lc?cTD$}9TIKa}Hi#Ql-z<)YyA|1oemE?i5d$AZ5q)Mj0WLF-ht?p+_BV*_<r=2K
-zWu_Y}r;8XW*Ki_SX1Wn_dWz8?_fecU32uMnCa5KVd`_a60<yh^cfw`naWD?#v2%ww
-z9^`r_iId@`A=Ax}GeyjllOx^*HxHR^zMKNFP)>=M2DeOk4#+;6C(Z}iUc+>_%xu>}
-zIg7<gxrP~Vndw%`SthQKYd8fiGu>5ko)Xu}HOz#|On1GU=fzEO4YS}f)7>KHC2_l4
-z!)&<Bba%>mS==qxa4KA8_U|5$`|UOHb&%`WC+5ICfK2x-Id6-H<Qx%m;l7W|>&{22
-zeJXwqa$guugUig<It_Ba{Yg9{*YIw*%sdvq1^Jxw;`ee5^WZY`_zhU<Jtt6X4YCb}
-z)8R4)qS_U7ua{!1T*G|0%<P9akbTxi><h9@1H=NjgOTaR%ehq?DrdM@2scrA49MrC
-zh~rdG6=%SmtehbyQ_NO<npgxkU&{(Xws(eDBxj~r40jfCFr3vOKXcnD9tGKFh9z*B
-zxxL3gw)X?^xaudwQn)9TPsuqgex>>uaVFfe%ID;q7cYQpgW)}Jnb`(snRo2e5$l6=
-z4a?v%w?H)rYz%f1Bjg(13zwOnpT%j})i?_-m(d*z^4>j69HHkL&W6j(zDfkSFGh(;
-zAh#n$oC9|}GTl@;6U9k#(!~4VW+KzgmNQk%k&`FRg<FVBw@6O0SR$uPoCkLfGTpgy
-z=85HU7Kr6=E0Ede*W&#a?tBaP0SkA5h5Mj|yU@a2WZ_m=xQi{^B^K^O7H*}5`>=&u
-zW#K+z;Z|F?k6O4(E!<@m?s5zFF$;Hvh5NXLyVAma!opo;;XY~MuC{QWvT)Z}xKCTS
-zYc1SoEZlV#?z0x|dJFeC3wMKs`@Ds_(Za12=-msu<8HVO_rzA<o8ocZBMocAW#;b-
-zTP*i}Ul=YXfV`g?)`82+aq4)G<J2@UN3LOAxXg44L5?j-#4>S?SPyQw@&b_e`-NhK
-z>Xl-BxYfw~H(@t|O~D=FUXblIYyg+JGpeURj=j!{O&;@H!-jB~+1{2QKi6m{2Fo>U
-z1eclH)D>iVL&ff@M~DG%qm*Oi#EE@XA0Re{J6L(BoCI;W>WN|#xMP&Z$r&%Esy<n~
-z4sM2WwwxSsn(FytQ@BN1RswR2SSrqxGfQj+cP=uwzg*7!;(R#^#Xz`Al&e5Kr&?U9
-z`U<f*+*QbY@3aBr`>oC5HaR=Q7I1eVbHBZ=+CK4scu2e+?h$0ZulO3|v2#HTSb-TF
-zJBBUcGIJj{1=-#}v4!fb#a3|JYFT@beRiYRK~AvP8g5r)_n48>P3$fwLTm#!3Yl)S
-zoER}yPG2zy?f_)E1LX`72g?~M-T-$vGTjk!Mv94Y#)xg<jzgw9Ud{wDRnBCw9o!6L
-zx|wpa#B4d!#P)FWk?9u7nIRU*nJL}~cNQ|;Idbk3=gOHcc7VGOnQn!g#o`h<RbofD
-zOOfd=m-CpoLe47D2X_rJkCAKfCJQ&%!tG??cD8W4Sh!s++z<;l)WYp%;dZxhZ?<s5
-zEZlGlH^Rd0Vc|wvxIHc0C=0ijg&S?*##p$KPBi{q`93(0Bcmhxcn|nrhVZYd;@@?2
-z@|~$po|EeoJ2{RI|A*OFRC1jXC(Fsid@@qHJ6G&<!y0bQpPH9joZ|}}o1a^fmFY_^
-zNiWGN?soOMlZZ9qd5L4a>9W_mxIXiIrzhN=_~!kD)74vpWi^}NKZlkN;`5USdDB(5
-z>hG`T@AaL3Tce#`PH((sbg$m-^b2eNr!dsQ@a^wMpdNv5v%Htn&;9rRd-aQSI7MN3
-z6ux<_=H&nUNK~Tmn$b=S#<IPgIBy^KjOrB~6Wcoud-_sr_4dRDoH}DYo$);u{S%Ko
-zHaXs%Y}?}Bwn(fi(rrD0n=ha5fm#oI_XYdndn9rurhE16I3s&x_P7^cmqI2Ceup_e
-z_};hgV&&2^Gw~JX8;LI;gS(O|)vnb>|K&gK@5{Hz-}j#%gf`<}gBr=7BsV7^a61Zc
-zG-l$w!hiDOj4a5{OvhGxNO4MW<`rLDno^oo%*BRxxaVd5WzHR0nfab|DW%|SE_I4(
-zt|_Oq$Xk^OL$N&f;wud;%H<0Q$?jRtHJElLr<ar#(YO@w3YWGcxzybb!P`c6>$qu-
-zw_W(GwKU6}yzRj6tg<rQ$!jl`=ajmW*Eal{7)816<h2LChfgo@Cik^5Uz+bu!_nS+
-z)Y8#n_UiET{L=KIdoOY*dMpFWE*V3!GKyT~Vi@T@dkT6E?M^S6lB35#PNCaVdEA?Y
-zMY(x;r0?!Q?mkSz-8N<M)l2iU^nhBP*P_xqD0~=%+Eh%%xUOQ2rBh3bOAM0H&O-Nk
-zJ00!K!s}uivkFVHre|ao)kve9DX<DII-{nP6wokC#Il)q{-w1f7R>ZkaxuhX`IO6?
-z_^c_Ob1``R>h>r5(((Ec`z0&GoxDDC`-{DWZDU`#{ls3vv3{jKa(jp!<n|f+6&>SF
-zUf;OA!Y;v8iv8jC0k_`qwi}<}PbqOHZ#(hXe!)z4^0o=T`^lQ(PI&6YuW+PreD?x-
-z;hVqr;^cqcUhBNS*76te*6?5)R;(}F0{B(_L#<o*_`^TDJPSv<<7D9?kndi{c@^hR
-z6z&AkSP~T-?M`QrInfW7nUx<7(|g3CYku)O=2^@ip2IwY`NQ*<XD@$v?()p#56@ek
-zwfx~Z%QM#fai5!9ijx(!D}N=zPsF0c^h9^+5RBgiInR8A#xsV;IpLTY0jmUC)DPx}
-z^pgC3daT(iS6=^*_q6|>ulc<H(<3AQqsV{03mVe}-;qAYS?oOXB~GQ9w?OO^?}m4g
-zIk>G($F~pN!wbu;=*(f5<KSzU&wIekPyV{RLw-DT`>8`U)9${wAQoS2eNNx$)B6?|
-z`|uwC*N7bO#9+c;C@Ln(dpL<<EGPe+Y5I%9hf9M6_L{~BH6n*YJ`9KoaIwzA0mg%P
-zY_c!DATJLWwHoOk^!#_G|Ga-&WAS>i_~yqxocx!gbj2_K_4dRwy>IkTB);?*7=n*-
-zFkxWn4pAd9MCIfiWVl@7bk4?h^Jc|kCq64Xy%hf+v!Va%T(L3#;v$FUe5-)1itdRG
-z=L7zdtUK|xRfx$OD7m-f^ulzEl5ktT7%(W~<z{$NqC0(-6*hIv68u*C{EFF?r=9)p
-zy|nwiR9t}g3UNL8Ga8B0rL`k-b>{I3YxLIVt_{6^^%h_0b^2g$@mTNEE6SbL<8H;t
-zykYP^N^A%5+_IW)wtmVRis!J7NzSwD(J4vJ1a?l+1b4btWBeP>4XycZ$A7thWBuPz
-zm{Yumdzs|Bi%hJMZw7jd#Cwa(%c3p_Ax_EU5cnZZ!>J+gL!8gDaF)1g$nwOHks*~;
-zA(<h|&WCuVy{Az+`Z`Mc-wSbfP0bejZ-IY{{pYW>h5mj*^2jmx+o&HuI?6fp#hY85
-zgyhP*IA8fk%zyF;w&8g8XE@d?s~(@W?7VaI_0zxG|DJPqp;uje$gRG7#;r!@dDZF%
-z-Ri+DZZ%YESaHm)?%nNH-+k0`A3EVyU-j0|@eZ%L>|VF}_G_;DS(d8j-Rl1L+-k$A
-zY!zCB*5Gb-$a(pU6OCbC^@GmAElwzwt~loG-R->lDE{@Z6V9t=oQ`+k#JSgb`!(zl
-zo<cZ*aHw)UJ+Y#mSW}cc7lpYf%=L2TdSR{?=AzxXXv{@pF2<dU!CVaHV%@n|%*A4^
-zw>#GxbG<Pa=g!4pE)H{j+_^rO>w`I7THV)=M4@M-TTzSLCb3PtJ-H5>)syY=--rIk
-zi2qnL8b=>Tak!4TQw$h`?|L97{~HBAZ|IHh1|TO6JL9+=Ag4a=g#T3<<ixGut${!M
-z^D~^hizu$1_~D<?;lwS$BX6<p?<AUFuIAU(#?t=V<G=maI_CYCKTz8#KbQArT;RnQ
-z=O-cj^7zj#pN5+R{)Rw0e|QDs^@~5;ey<1E1yRl{Ea5~yT;{a&aG2gB7G3j;M+S}y
-z92Nh}S#Y(NxzgzQ{zWy0&zRx(Il;Xx=3@MufOr2znCs`<?$(&_Cr{J!bNeOa7Nz&Q
-zJv~1imfw8M9=lpw{Eu?~y;}2m-ffqkJTmb!M(+mf3njbhKI{wS{kR+Ui+8-%0y+85
-zcR|gJn(zOMH*EI5y4Sd>*SMM|X!y+A`ydPqd|1=)L5V)^0W&}O>(X$6pX}grR$~lu
-zX)t02ELy4|g=v*HIL6-bhQ$|owIPCkkDI&W<##;4JKg0sIrM{Rlh<w^?(g2aEHj4k
-zO~6~w%Vrji#`S%!^T3fG?HT_ok^hy#|H|gS1y}2S|0BQ*f!#Vrz__frkIh3cG{h8z
-zD<Fnb?sYIKGO7>e+{eMA@TUnejmLK1hG9O^@Y|BT2mjZ&T3h~=^+;UhIiSSwH!cz%
-z@bdwGr@@_u;2nAH#lbJntt4lRGsOJ_e@IR)$HBhPq%lLfIev4vCUDD#BqY02c;ce0
-zP^Wx$@+h8{?;k$2H}sXizV%tRnlaA3C&k4&_!$R_QxcAo0t~?Oz!3LM-58`oyuHXk
-zEf=3U`LH}2kEW&Rd{$OLVO~~9v2RRPVQEHQ?i61^wvP==|9gvupv@e{4@pRLr|`tY
-z<Xwr)^Ja{$O!*FtdH?XsoAw`k<1hcdZP(lXe%^of@Acx9wv6W+kJLWBV%=#YhU1+6
-zr-tPINBvJ3l7IGt!vQ&dhM;FSCLfYG!JV!(CilN?`_KEg&VRWX6_`)?%~dBHW9;yY
-z<MHs3;ofN63;)Pi{PKY}2lXMBm;77eKkt7A`_KDt*|p{a5^;(+zj^1-7v4i-cmAE%
-zG4DQf%<edqhvnfn_kD2WWdl|#Ro(HuTLoBcr0V|f+$zB8hd6$@hJ$+zSY0mn&}VKH
-zV0HRv&wcH0ZWUmaqi3!G!)Jlj|2JFaByxmw<Yf$y+=ohce#iHicOM$L^ZUQUy!-Is
-zIQj?oV%~jN?k+#{8Rp%G>7%*)wZCEBeW>Fu-}f=*-G{r~<y#M8-hH^!UB3I*n0Frr
-zCG+_QwqV|U7?kX_@W2+gdBUJ%ubl_BxQ!J4zuFdDLClvq!~Nf<_|ISK{JPfi7u|9H
-zsGvae!tT2v&hVWP{vPc=xqO!Unf0t32S2<@@*2q>{w@{oz+(90Z7aw9Imn(hD<>S5
-z_sDi!^9!rS`Hvr-_c+<{!*d-cIDUA3<J`s%&uN^<_~ChslNUcccX8h0=W1V98uMd_
-zf9WH0ri)|#Vl%!kc1QJi^tQ}<M^KCx!FFM|Uwn~Qd);eY9cw<X<`{w_k<0JTmyaua
-zp_kvSYYsGiyv+X?@}IByUI3q;yC0$d_`Sfzk8`g0ULe&S5&5t|sR_wG@1f?_*=94|
-zF(c|wjJI;}p*_b+xfl`UVw{wD`8X{(cY0x7Zgy@~W{u%m&EmguwDpg?AGy-_$ba9M
-zk--(;kC<D#-}@1749j;R{4H)iMvoj-=A-vG*3G~p#*kx%_$HL5=VJ_+KRq`;Blijw
-zjt*;0#<_)2;Y&vh{9EY%e#QTo=T`nteq_&2Zum|G9|XIPK_U1PznEe$%I9mx;KO`Q
-zXKUfNdYF>%-kpDrfWL#Ef^Fw-#d6&WmK7D`m*!8&O)tsC@7^z;^WRRa`v3aZe*-c%
-B;P(Ik
-
-literal 0
-HcmV?d00001
-
-diff --git a/win32/winapi/src/user32/keyboard.rs b/win32/winapi/src/user32/keyboard.rs
-new file mode 100644
-index 0000000..4bfe396
---- /dev/null
-+++ b/win32/winapi/src/user32/keyboard.rs
-@@ -0,0 +1,122 @@
-+//! Original game's scan-code-zero ToAscii path for the fixed reference
-+//! Chinese keyboard layout. This does not implement IME or all layouts.
-+use crate::{Ptr, kernel32::SetLastError};
-+use runtime::Context;
-+const TABLE: &[u8; 16384] = include_bytes!("keyboard_data.bin");
-+const KEYMAP: &[u8; 15360] = include_bytes!("keymap_data.bin");
-+const REFERENCE_LAYOUT: u32 = 0xe0010804;
-+
-+#[win32_derive::dllexport]
-+pub fn GetKeyboardLayout(ctx: &mut Context, idThread: u32) -> u32 {
-+    if idThread == 0 || idThread == ctx.thread_id {
-+        return REFERENCE_LAYOUT;
-+    }
-+    // All currently created virtual threads inherit this one layout. Layout
-+    // activation and IME language changes are not implemented by this port.
-+    if idThread < crate::kernel32::lock().next_thread_id {
-+        REFERENCE_LAYOUT
-+    } else {
-+        0
-+    }
-+}
-+
-+#[win32_derive::dllexport]
-+pub fn MapVirtualKeyA(_ctx: &mut Context, uCode: u32, uMapType: u32) -> u32 {
-+    if uMapType > 4 {
-+        return 0;
-+    }
-+    let group = match uCode & !0xff {
-+        0 => 0,
-+        0xe000 => 1,
-+        0xe100 => 2,
-+        _ => unimplemented!("MapVirtualKeyA code prefix {uCode:x}"),
-+    };
-+    let offset = ((group * 5 + uMapType) * 256 + (uCode & 255)) as usize * 4;
-+    u32::from_le_bytes(KEYMAP[offset..][..4].try_into().unwrap())
-+}
-+
-+#[win32_derive::dllexport]
-+pub fn ToAscii(
-+    ctx: &mut Context,
-+    uVirtKey: u32,
-+    uScanCode: u32,
-+    lpKeyState: Ptr<u8>,
-+    lpChar: Ptr<u8>,
-+    uFlags: u32,
-+) -> i32 {
-+    if uScanCode != 0 || uFlags != 0 {
-+        unimplemented!("ToAscii scan={uScanCode:x} flags={uFlags:x}");
-+    }
-+    if lpChar.addr == 0 {
-+        SetLastError(ctx, 87);
-+        return 0;
-+    }
-+    if uVirtKey > 255 {
-+        return 0;
-+    }
-+    let keys = if lpKeyState.addr == 0 {
-+        let state = crate::user32::state().input.borrow();
-+        std::array::from_fn(|index| state.key_state(index as u8))
-+    } else {
-+        <[u8; 256]>::try_from(&ctx.memory[lpKeyState.addr..][..256]).unwrap()
-+    };
-+    let modifiers = (u32::from(keys[0x10] & 0x80 != 0))
-+        | (u32::from(keys[0x11] & 0x80 != 0) << 1)
-+        | (u32::from(keys[0x12] & 0x80 != 0) << 2)
-+        | (u32::from(keys[0x14] & 1 != 0) << 3);
-+    let offset = (modifiers * 256 + uVirtKey) as usize * 4;
-+    let cell = &TABLE[offset..][..4];
-+    // Return value counts translated characters, not encoded ANSI bytes.
-+    // Preserve every byte the actual reference call left untouched.
-+    ctx.memory[lpChar.addr..][..cell[2] as usize].copy_from_slice(&cell[..cell[2] as usize]);
-+    cell[3] as i32
-+}
-+
-+#[cfg(test)]
-+mod tests {
-+    use super::*;
-+    #[test]
-+    fn control_return_dbcs_and_no_character_preserve_reference_buffer_bytes() {
-+        let mut ctx = Context {
-+            cpu: Default::default(),
-+            thread_handle: 1,
-+            thread_id: 1,
-+            memory: runtime::Memory::leak_new(16384),
-+            blocks: &[],
-+            cache: Default::default(),
-+            recent: [Context::return_from_x86; 4],
-+        };
-+        assert_eq!(GetKeyboardLayout(&mut ctx, 0), 0xe0010804);
-+        assert_eq!(GetKeyboardLayout(&mut ctx, 1), 0xe0010804);
-+        for (key, control, shift, result, word) in [
-+            (13, false, false, 1, 0xa50d),
-+            (13, true, false, 1, 0xa50a),
-+            (13, true, true, 0, 0xa55a),
-+            (0xe6, false, false, 1, 0xc0a1),
-+            (0x10, false, false, 0, 0xa55a),
-+        ] {
-+            ctx.memory[0x1000..][..256].fill(0);
-+            if control {
-+                ctx.memory.write::<u8>(0x1011, 0x80);
-+            }
-+            if shift {
-+                ctx.memory.write::<u8>(0x1010, 0x80);
-+            }
-+            ctx.memory.write::<u32>(0x2000, 0xdead_a55a);
-+            assert_eq!(
-+                ToAscii(&mut ctx, key, 0, Ptr::new(0x1000), Ptr::new(0x2000), 0),
-+                result
-+            );
-+            assert_eq!(ctx.memory.read::<u32>(0x2000), 0xdead_0000 | word);
-+        }
-+        for (mode, code, expected) in [
-+            (0, 13, 0x1c),
-+            (1, 0x1c, 13),
-+            (2, 65, 65),
-+            (3, 0xe01d, 0xa2),
-+            (4, 0xa3, 0xe01d),
-+        ] {
-+            assert_eq!(MapVirtualKeyA(&mut ctx, code, mode), expected);
-+        }
-+    }
-+}
-diff --git a/win32/winapi/src/user32/keyboard_data.bin b/win32/winapi/src/user32/keyboard_data.bin
-new file mode 100644
-index 0000000000000000000000000000000000000000..32dca1dd919c8ef889b7e675de5a4d778713ef5d
-GIT binary patch
-literal 16384
-zcmeI2hf>u*6ozxbu84}*6}wolVaJBp8-iW1VDG(v?Ol8mAC2$Kn3;85Lw0W>8|U1a
-zZ&J4ZXHPaKdy^#lHzldnrh=KP$+|Yvvd$Mf$}M-?%c{dp+e-OuupK&K2keAhup9Qk
-zUa-rV*F&V=g?n%x9>7C*1drhfJcVcQ9A3ancm=QF4ZMYS@E$(ENB9K8Fan>!Y}5CA
-z1LZfuX6X2J+``efp0e^Eh^Q~FF?P{E>Ek9a^}F*A`#nHggK!hpS?%uUdYW<X$Ipf+
-zY#Y1(uSc^La2Qs>YFGoeU@eH>w1aC-r1!c>KLR~)6pq1hH~}Z&6r6@La2C$NdFX`;
-z&<Fi+5iY@HxB^$<8eE4PkhT|cO#NTV%KVk1`oE}<@3#-l<oPLnb{h`DA@~mYYN$Wg
-z7uxy?-(aQHuJk8X|F=hO_R~(wx-Mh=&uTAkS`F<Rpb;j(M3@AVA$|VIn5V-GXo8v0
-z46|T1%z+k|3#~8@=EDM52#X+Ze_Z)e|JU{3rA{^O$^2geOaC$#Lj9`D(aZcVs(zRM
-zCxzAjdq0<X)LSM07hCB1U*C*uGv<cRJgKkMB&n+ZYy7YA|5$ThV(YQ;jAwcm{gXaw
-z{O@Ol^!?W?CGWrHb>4H=`d{z&KaKzMs$Xut*!^GQ|8niGwW|WEfGVI0r~<0M|D!<c
-z@Bc;Y|5s`MPrv_%`Ig52VY<cc|3$?ALwwJu%Kv}Fiu(QEe=ckM@2{DZaP9wv?o+zH
-z{}s3Y7dAdARi*tuUH`-FJl-W`{_Fm~ZH2JC1iKddIpVXgTP6ROaqIg3r}cgA=>C6x
-zwPJt&*Z4obEz8Uq`~IKC|6$gT-TyWI53_60rDFGgjsJ_bxYnl%r~;~hDxeCe0##LD
-E6dfg>s{jB1
-
-literal 0
-HcmV?d00001
-
-diff --git a/win32/winapi/src/user32/keymap_data.bin b/win32/winapi/src/user32/keymap_data.bin
-new file mode 100644
-index 0000000000000000000000000000000000000000..b73e72cd27a9bb4c2a902322013c70b863a65b87
-GIT binary patch
-literal 15360
-zcmeI1X;Y117{^Ns+6Y-%IAlqQN=X~CW{Ju!X4>~=vP)kAp8(@+UqHh5uruR@<prO>
-z?>{|v=NWUPCpq=vx@Lav<vh=MPXGJb&Jhz6ww~~Ga+bzy$>b^~<^=O>-#VXp4(x_Q
-zPzhb&w{C9{%Qy@pz85Q)AB9FZ1xMgG)ImKofZxhlG{I@mGm~Kf#6dhHKq4%JMX(r>
-zU@BY7i$$;<La+?h!v@HORj?5@!Dc9dVpt7pU@0tzb+7_f!VXA>Ldbw^&<vO13IsL%
-z-6y@9jxp-*FM}$mh8oxddto2c!hSda2jM(ifY~;k`C;go;Ty|;c7c4z`H{|bwrvY<
-zm<l@~1xi8sZG~uACJ!orEXacvXoWU72kqdj(@ngwm$47}VZhsS!yuC(w+J|na=ku}
-z{8@f2eVjHr7x|seLvgAY8HX`&v8A|`Z^;i7muKK2oCU?TV!8od!5h#SC@$om@?rU=
-z{6}%Gn3r!W{*`B*!drL=im}&l3FOD}YiTAQS6tM?Gk6X!K-Vkg6w4t{Tn@oixCYnZ
-z2Hb>Oa2xKxFx-RtpqN*@uLo(Y_?Pd<mvj!fpmW>+g`oW5>?4!AFyb~Co8kBPf5+Z?
-z_yC{a0eprGP;QBXFYpz<!FTup+L!&D7^eI;+j~{<Wo8NlQNYEy|DII;BEUQ=!nL6Y
-zdqK8}xVRWfV5;0T)q5%zDUTcg<s(<qTuxFR^XH{{*2+09w>2_v0_8L1Kjl8<CRcNn
-z50$t6#qzni0F+}~u2GLMU#w=ne2_nUjw<%`8C4Vf`n9l*mihC)YKY&eStR*4qBI}n
-zIf~2a#E@cb9LB)q1^Ir^`u~`F6mvo9|3j{S4b!dvkGNK6{RBc_^?#zjMhY`iAff_2
-z5q8tqTjJY4!QAze+E!gsU#ag1s+*P21%B)H7O{-#uSa|@Rxnq6RUT12Rn1lZUk9qQ
-z4dAzO7OvLnnaQvK)DOo)0wlsha5?I4dDXuEBi0Pf^-3KxykGvK@0s$Uoc9xcw3~6Z
-zP4zYv)FY-qDU`uhh?ZsYAoXynw|US4t<VPQ7u&&Er<-_VFJm9{!+^KvhCwDnZegP-
-zU<#N5(^OzC`u}u3TP+0X|Ce%okp5rStN&jHA+Y}6`hVQO%oH#MOaW8CQ(!LYzy1Cf
-zc0c?7zpxfIGX+cmQ@|831xx``z!doZ3d}|SZ@>SA&(-?>uogBm1xx``z!Zp{0&`LS
-Z?f1X%`C9!CYhg1}z!WeAOo8Yr@C(L9MDPFr
-
-literal 0
-HcmV?d00001
-
++++ b/win32/winapi/src/gdi32/display.rs
+@@ -0,0 +1,17 @@
++//! Frozen task-owned reference desktop: 1024x768, 32 bits, 96 DPI.
++//! Captured by games/joey/reverse/graphics_probe.c; not a general device driver.
++pub(super) const CAPS: [i32;121] = [
++    16384,0,1,0,271,0,203,0,1024,0,
++    768,0,32,0,1,0,-1,0,-1,0,
++    0,0,0,0,-1,0,0,0,511,0,
++    254,0,255,0,31223,0,1,0,48793,0,
++    36,0,36,0,51,0,0,0,0,0,
++    0,0,0,0,0,0,0,0,0,0,
++    0,0,0,0,0,0,0,0,0,0,
++    0,0,0,0,0,0,0,0,0,0,
++    0,0,0,0,0,0,0,0,96,0,
++    96,0,0,0,0,0,0,0,0,0,
++    0,0,0,0,0,0,20,0,24,0,
++    0,0,0,0,0,0,1,768,1024,0,
++    0,
++];
 diff --git a/win32/winapi/src/gdi32/font.rs b/win32/winapi/src/gdi32/font.rs
 new file mode 100644
 index 0000000..fd823c6
@@ -205483,6 +205854,506 @@ w<;aIgPz#FQu^c*~U+5DT)X`MHF6f$nlq|9mI-_g86^J#}gLt`wL-p_f0o_78XaE2J
 literal 0
 HcmV?d00001
 
+diff --git a/win32/winapi/src/kernel32/locale.rs b/win32/winapi/src/kernel32/locale.rs
+new file mode 100644
+index 0000000..a8cb301
+--- /dev/null
++++ b/win32/winapi/src/kernel32/locale.rs
+@@ -0,0 +1,111 @@
++//! Installed locale profiles for the original game's browser environment.
++//! This is not the complete Windows locale catalogue or editable user locale.
++use runtime::Context;
++use crate::{Ptr,kernel32::SetLastError};
++#[path = "locale_data.rs"]
++mod data;
++const INSTALLED: &[u32] = &[0x0409,0x0411,0x0804];
++
++#[win32_derive::dllexport]
++pub fn GetUserDefaultLCID(_ctx: &mut Context) -> u32 {0x0804}
++
++#[win32_derive::dllexport]
++pub fn IsValidLocale(_ctx: &mut Context, Locale: u32, dwFlags: u32) -> bool {
++    matches!(dwFlags,1|2) && INSTALLED.contains(&Locale)
++}
++
++#[win32_derive::dllexport]
++pub fn IsValidCodePage(_ctx: &mut Context, CodePage: u32) -> bool {
++    runtime::Memory::code_page_encoding(CodePage).is_some()
++}
++
++#[win32_derive::dllexport]
++pub fn EnumSystemLocalesA(ctx: &mut Context, lpLocaleEnumProc: Ptr<()>, dwFlags: u32) -> bool {
++    if lpLocaleEnumProc.addr == 0 {SetLastError(ctx,87); return false;}
++    if !matches!(dwFlags,0|1|2) {SetLastError(ctx,1004); return false;}
++    let previous = ctx.cpu.regs.esp;
++    ctx.cpu.regs.esp = previous.checked_sub(16).unwrap(); let buffer = ctx.cpu.regs.esp;
++    for locale in INSTALLED {
++        let name = format!("{locale:08x}\0");
++        ctx.memory[buffer..][..name.len()].copy_from_slice(name.as_bytes());
++        let callback = ctx.indirect32(lpLocaleEnumProc.addr);
++        ctx.call32_x86(callback,vec![buffer]);
++        if ctx.cpu.regs.eax == 0 {break;}
++    }
++    ctx.cpu.regs.esp = previous; true
++}
++
++fn info(ctx: &mut Context, Locale: u32, LCType: u32, addr: u32, capacity: i32, wide: bool) -> i32 {
++    if capacity < 0 {SetLastError(ctx,87); return 0;}
++    let locale = if matches!(Locale,0|0x400|0x800) {0x0804} else {Locale};
++    if !INSTALLED.contains(&locale) {SetLastError(ctx,87); return 0;}
++    let kind = LCType & 0xffff;
++    if LCType & !(0xffff|0x20000000|0x40000000|0x80000000) != 0 {SetLastError(ctx,1004); return 0;}
++    let number = LCType & 0x20000000 != 0;
++    let mode = if number {if wide {3} else {4}} else if wide {0} else if LCType & 0x40000000 != 0 {2} else {1};
++    let result = data::lookup(locale,kind,mode).unwrap_or_else(||
++        panic!("Unprobed original locale field: LCID={locale:x} LCTYPE={kind:x}"));
++    let bytes = match result {Ok(bytes)=>bytes,Err(error)=>{SetLastError(ctx,error);return 0;}};
++    let count = (bytes.len()/if wide {2} else {1}) as i32;
++    if capacity == 0 {return count;}
++    if addr == 0 {SetLastError(ctx,87); return 0;}
++    if capacity < count {SetLastError(ctx,122); return 0;}
++    ctx.memory[addr..][..bytes.len()].copy_from_slice(bytes);
++    count
++}
++
++#[win32_derive::dllexport]
++pub fn GetLocaleInfoA(ctx: &mut Context, Locale: u32, LCType: u32, lpLCData: Ptr<u8>, cchData: i32) -> i32 {
++    info(ctx,Locale,LCType,lpLCData.addr,cchData,false)
++}
++#[win32_derive::dllexport]
++pub fn GetLocaleInfoW(ctx: &mut Context, Locale: u32, LCType: u32, lpLCData: Ptr<u16>, cchData: i32) -> i32 {
++    info(ctx,Locale,LCType,lpLCData.addr,cchData,true)
++}
++
++#[cfg(test)]
++mod tests {
++    use super::*;
++    #[test]
++    fn locale_ansi_unicode_and_numeric_sizes_differ() {
++        let mut ctx = Context {cpu:Default::default(),thread_handle:1,thread_id:1,
++            memory:runtime::Memory::leak_new(16384),blocks:&[],cache:Default::default(),recent:[Context::return_from_x86;4]};
++        ctx.cpu.regs.fs_base=0x3000;
++        assert_eq!(GetLocaleInfoA(&mut ctx,0x411,0x1004,Ptr::new(0),0),4);
++        assert_eq!(GetLocaleInfoA(&mut ctx,0,1,Ptr::new(0x1200),5),5);
++        assert_eq!(ctx.memory.read_str(0x1200),"0804");
++        assert_eq!(GetLocaleInfoW(&mut ctx,0x411,0x1004,Ptr::new(0x1000),4),4);
++        assert_eq!(ctx.memory.read_wstr(0x1000).to_string_lossy(),"932");
++        assert_eq!(GetLocaleInfoA(&mut ctx,0x411,0x20000001,Ptr::new(0x1100),4),4);
++        assert_eq!(ctx.memory.read::<u32>(0x1100),0x411);
++        assert_eq!(GetLocaleInfoW(&mut ctx,0x411,0x20000001,Ptr::new(0x1100),2),2);
++        assert_eq!(GetLocaleInfoA(&mut ctx,0x411,0x20001001,Ptr::new(0x1100),4),0);
++        assert_eq!(crate::kernel32::GetLastError(&mut ctx),1004);
++    }
++    #[test]
++    fn reference_currency_encoding_and_binary_fields_are_preserved() {
++        let mut ctx = Context {cpu:Default::default(),thread_handle:1,thread_id:1,
++            memory:runtime::Memory::leak_new(16384),blocks:&[],cache:Default::default(),recent:[Context::return_from_x86;4]};
++        ctx.cpu.regs.fs_base=0x3000;
++        assert_eq!(GetLocaleInfoW(&mut ctx,0x411,0x14,Ptr::new(0x1000),2),2);
++        assert_eq!(ctx.memory.read::<u16>(0x1000),0x00a5);
++        assert_eq!(GetLocaleInfoA(&mut ctx,0x411,0x14,Ptr::new(0x1100),2),2);
++        assert_eq!(ctx.memory.read::<u16>(0x1100),0x005c);
++        let acp = data::lookup(0x411,0x14,2).unwrap().unwrap();
++        assert_ne!(acp,&[0x5c,0]);
++        assert_eq!(GetLocaleInfoA(&mut ctx,0x411,0x40000014,Ptr::new(0x1200),acp.len() as i32),acp.len() as i32);
++        assert_eq!(&ctx.memory[0x1200..][..acp.len()],acp);
++        assert_eq!(GetLocaleInfoW(&mut ctx,0x411,0x15,Ptr::new(0x1300),4),4);
++        assert_eq!(ctx.memory.read_wstr(0x1300).to_string_lossy(),"JPY");
++        assert_eq!(GetLocaleInfoW(&mut ctx,0x804,0x58,Ptr::new(0x1400),16),16);
++        let wide_signature = ctx.memory[0x1400..][..32].to_vec();
++        assert_eq!(GetLocaleInfoA(&mut ctx,0x804,0x58,Ptr::new(0x1500),32),32);
++        assert_eq!(&ctx.memory[0x1500..][..32],wide_signature);
++        ctx.memory.write::<u32>(0x1600,0xdeadbeef);
++        assert_eq!(GetLocaleInfoW(&mut ctx,0x411,0x15,Ptr::new(0x1600),3),0);
++        assert_eq!(crate::kernel32::GetLastError(&mut ctx),122);
++        assert_eq!(ctx.memory.read::<u32>(0x1600),0xdeadbeef);
++        assert_eq!(GetLocaleInfoA(&mut ctx,0x411,0x79,Ptr::new(0x1600),32),0);
++        assert_eq!(crate::kernel32::GetLastError(&mut ctx),1004);
++    }
++}
+diff --git a/win32/winapi/src/kernel32/locale_data.bin b/win32/winapi/src/kernel32/locale_data.bin
+new file mode 100644
+index 0000000000000000000000000000000000000000..de3b6a5b656417a1dd5afdb8539d4fcb79e0fddf
+GIT binary patch
+literal 38558
+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
+B;P(Ik
+
+literal 0
+HcmV?d00001
+
+diff --git a/win32/winapi/src/kernel32/locale_data.rs b/win32/winapi/src/kernel32/locale_data.rs
+new file mode 100644
+index 0000000..58a1ed3
+--- /dev/null
++++ b/win32/winapi/src/kernel32/locale_data.rs
+@@ -0,0 +1,27 @@
++//! Byte-preserving snapshot of canonical reference locale values.
++//! Generated by games/joey/reverse/generate_locale_data.py, not a complete NLS DB.
++const BYTES: &[u8] = include_bytes!("locale_data.bin");
++fn u16_at(at: usize) -> u16 {u16::from_le_bytes(BYTES[at..at+2].try_into().unwrap())}
++fn u32_at(at: usize) -> u32 {u32::from_le_bytes(BYTES[at..at+4].try_into().unwrap())}
++
++pub(super) fn lookup(locale: u32, kind: u32, mode: usize) -> Option<Result<&'static [u8], u32>> {
++    assert!(mode < 5 && &BYTES[..4] == b"JLC1");
++    let key = locale.checked_shl(16)? | kind;
++    let (mut left, mut right) = (0, u32_at(4) as usize);
++    while left < right {
++        let mid = left + (right-left)/2;
++        let at = 8 + mid*44;
++        match key.cmp(&u32_at(at)) {
++            std::cmp::Ordering::Less => right = mid,
++            std::cmp::Ordering::Greater => left = mid+1,
++            std::cmp::Ordering::Equal => {
++                let row = at+4+mode*8;
++                let error = u16_at(row+6) as u32;
++                if error != 0 {return Some(Err(error));}
++                let offset = u32_at(row) as usize;
++                return Some(Ok(&BYTES[offset..offset+u16_at(row+4) as usize]));
++            }
++        }
++    }
++    None
++}
+diff --git a/win32/winapi/src/kernel32/sync.rs b/win32/winapi/src/kernel32/sync.rs
+new file mode 100644
+index 0000000..93ceb79
+--- /dev/null
++++ b/win32/winapi/src/kernel32/sync.rs
+@@ -0,0 +1,134 @@
++//! Recursive, thread-owned Win32 critical sections. The guest object is opaque.
++//! WASM worker creation is not supported yet; contention must not become a no-op.
++use std::sync::{Arc, Condvar, Mutex, atomic::{AtomicI32, Ordering}};
++use runtime::Context;
++use crate::{Ptr, kernel32::lock};
++
++#[derive(Default)]
++struct Ownership { thread: u32, depth: u32 }
++
++#[derive(Default)]
++pub struct CriticalSection { owner: Mutex<Ownership>, released: Condvar }
++
++impl CriticalSection {
++    fn enter(&self, thread: u32) {
++        assert_ne!(thread, 0);
++        let mut owner = self.owner.lock().unwrap();
++        while owner.thread != 0 && owner.thread != thread {
++            owner = self.released.wait(owner).unwrap();
++        }
++        owner.thread = thread;
++        owner.depth = owner.depth.checked_add(1).expect("critical section recursion overflow");
++    }
++    fn leave(&self, thread: u32) {
++        let mut owner = self.owner.lock().unwrap();
++        assert_eq!(owner.thread, thread, "critical section released by non-owner");
++        assert_ne!(owner.depth, 0);
++        owner.depth -= 1;
++        if owner.depth == 0 { owner.thread = 0; self.released.notify_one(); }
++    }
++}
++
++fn section(addr: u32) -> Arc<CriticalSection> {
++    lock().critical_sections.get(&addr).expect("uninitialized critical section").clone()
++}
++
++#[win32_derive::dllexport]
++pub fn InitializeCriticalSection(ctx: &mut Context, lpCriticalSection: Ptr<()>) {
++    assert!(lpCriticalSection.addr >= 0x1000);
++    let mut state = lock();
++    assert!(!state.critical_sections.contains_key(&lpCriticalSection.addr), "critical section initialized twice");
++    // 32-bit RTL_CRITICAL_SECTION is 24 bytes; applications must not inspect it.
++    ctx.memory[lpCriticalSection.addr..][..24].fill(0);
++    ctx.memory.write::<i32>(lpCriticalSection.addr + 4, -1);
++    state.critical_sections.insert(lpCriticalSection.addr, Arc::new(CriticalSection::default()));
++}
++
++#[win32_derive::dllexport]
++pub fn EnterCriticalSection(ctx: &mut Context, lpCriticalSection: Ptr<()>) {
++    section(lpCriticalSection.addr).enter(ctx.thread_id);
++}
++
++#[win32_derive::dllexport]
++pub fn LeaveCriticalSection(ctx: &mut Context, lpCriticalSection: Ptr<()>) {
++    section(lpCriticalSection.addr).leave(ctx.thread_id);
++}
++
++#[win32_derive::dllexport]
++pub fn DeleteCriticalSection(_ctx: &mut Context, lpCriticalSection: Ptr<()>) {
++    let mut state = lock();
++    let section = state.critical_sections.get(&lpCriticalSection.addr).expect("uninitialized critical section");
++    assert_eq!(section.owner.lock().unwrap().depth, 0, "deleting owned critical section");
++    state.critical_sections.remove(&lpCriticalSection.addr);
++}
++
++fn atomic_long(ctx: &mut Context, addr: u32) -> &AtomicI32 {
++    assert!(addr >= 0x1000 && addr % 4 == 0, "invalid interlocked LONG address");
++    let bytes = &mut ctx.memory.bytes[addr as usize..][..4];
++    let ptr = bytes.as_mut_ptr().cast::<i32>();
++    assert_eq!(ptr.align_offset(std::mem::align_of::<AtomicI32>()), 0);
++    // Guest interlocked addresses use only atomic access during this operation.
++    unsafe { AtomicI32::from_ptr(ptr) }
++}
++
++#[win32_derive::dllexport]
++pub fn InterlockedExchange(ctx: &mut Context, Target: Ptr<i32>, Value: i32) -> i32 {
++    atomic_long(ctx, Target.addr).swap(Value, Ordering::SeqCst)
++}
++
++#[win32_derive::dllexport]
++pub fn InterlockedIncrement(ctx: &mut Context, Addend: Ptr<i32>) -> i32 {
++    atomic_long(ctx, Addend.addr).fetch_add(1, Ordering::SeqCst).wrapping_add(1)
++}
++
++#[win32_derive::dllexport]
++pub fn InterlockedDecrement(ctx: &mut Context, Addend: Ptr<i32>) -> i32 {
++    atomic_long(ctx, Addend.addr).fetch_sub(1, Ordering::SeqCst).wrapping_sub(1)
++}
++
++#[cfg(test)]
++mod tests {
++    use super::*;
++    #[test]
++    fn interlocked_returns_previous_exchange_and_new_wrapping_arithmetic() {
++        let mut ctx = Context { cpu: Default::default(), thread_handle: 1, thread_id: 1,
++            memory: runtime::Memory::leak_new(8192), blocks: &[], cache: Default::default(),
++            recent: [Context::return_from_x86; 4] };
++        ctx.memory.write::<i32>(0x1000, i32::MAX);
++        assert_eq!(InterlockedIncrement(&mut ctx, Ptr::new(0x1000)), i32::MIN);
++        assert_eq!(InterlockedDecrement(&mut ctx, Ptr::new(0x1000)), i32::MAX);
++        assert_eq!(InterlockedExchange(&mut ctx, Ptr::new(0x1000), -7), i32::MAX);
++        assert_eq!(ctx.memory.read::<i32>(0x1000), -7);
++    }
++    #[test]
++    fn recursive_release_retains_ownership_until_last_leave() {
++        let section = CriticalSection::default();
++        section.enter(1); section.enter(1); section.leave(1);
++        let owner = section.owner.lock().unwrap();
++        assert_eq!((owner.thread, owner.depth), (1, 1)); drop(owner);
++        section.leave(1);
++        let owner = section.owner.lock().unwrap(); assert_eq!((owner.thread, owner.depth), (0, 0));
++    }
++    #[test]
++    fn competing_threads_cannot_overlap() {
++        let section = Arc::new(CriticalSection::default());
++        let value = Arc::new(std::sync::atomic::AtomicU32::new(0));
++        let threads: Vec<_> = (1..=4).map(|id| {
++            let section = section.clone(); let value = value.clone();
++            std::thread::spawn(move || {
++                for _ in 0..500 {
++                    section.enter(id); section.enter(id);
++                    let old = value.load(std::sync::atomic::Ordering::Relaxed);
++                    std::thread::yield_now();
++                    value.store(old + 1, std::sync::atomic::Ordering::Relaxed);
++                    section.leave(id); section.leave(id);
++                }
++            })
++        }).collect();
++        for thread in threads { thread.join().unwrap(); }
++        assert_eq!(value.load(std::sync::atomic::Ordering::Relaxed), 2000);
++    }
++    #[test]
++    #[should_panic(expected = "critical section released by non-owner")]
++    fn non_owner_cannot_release() { let section = CriticalSection::default(); section.enter(1); section.leave(2); }
++}
 diff --git a/win32/winapi/src/registry_reference.txt b/win32/winapi/src/registry_reference.txt
 new file mode 100644
 index 0000000..d339742
@@ -205497,27 +206368,282 @@ index 0000000..d339742
 +R 00000005 00000000 00000000 00000007 00000004 00000061 00000062 00000063 00000000 000000aa 000000aa 000000aa 000000aa
 +R 00000006 00000000 00000000 00000001 00000000 000000aa 000000aa 000000aa 000000aa 000000aa 000000aa 000000aa 000000aa
 +R 00000007 00000000 000000ea 00000001 00000004 000000aa 000000aa 000000aa 000000aa 000000aa 000000aa 000000aa 000000aa
-diff --git a/win32/winapi/src/gdi32/dib_1bpp_reference.txt b/win32/winapi/src/gdi32/dib_1bpp_reference.txt
+diff --git a/win32/winapi/src/user32/keyboard.rs b/win32/winapi/src/user32/keyboard.rs
 new file mode 100644
-index 0000000..4751972
+index 0000000..4bfe396
 --- /dev/null
-+++ b/win32/winapi/src/gdi32/dib_1bpp_reference.txt
-@@ -0,0 +1,18 @@
-+M 00000000 00000003 24 80 f0 00 38 22 0c 00 38 22 0c 00 24 80 f0 00 38 22 0c 00 24 80 f0 00 24 80 f0 00 38 22 0c 00 24 80 f0 00 38 22 0c 00 24 80 f0 00 38 22 0c 00 38 22 0c 00 aa aa aa aa aa aa aa aa aa aa aa aa 38 22 0c 00 24 80 f0 00 24 80 f0 00 38 22 0c 00 38 22 0c 00 38 22 0c 00 24 80 f0 00 24 80 f0 00 38 22 0c 00 24 80 f0 00 38 22 0c 00 24 80 f0 00 38 22 0c 00 aa aa aa aa aa aa aa aa aa aa aa aa 24 80 f0 00 38 22 0c 00 24 80 f0 00 38 22 0c 00 38 22 0c 00 24 80 f0 00 38 22 0c 00 24 80 f0 00 24 80 f0 00 24 80 f0 00 38 22 0c 00 38 22 0c 00 24 80 f0 00 aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa
-+M 00000001 00000003 24 80 f0 00 38 22 0c 00 24 80 f0 00 38 22 0c 00 38 22 0c 00 24 80 f0 00 38 22 0c 00 24 80 f0 00 24 80 f0 00 24 80 f0 00 38 22 0c 00 38 22 0c 00 24 80 f0 00 aa aa aa aa aa aa aa aa aa aa aa aa 38 22 0c 00 24 80 f0 00 24 80 f0 00 38 22 0c 00 38 22 0c 00 38 22 0c 00 24 80 f0 00 24 80 f0 00 38 22 0c 00 24 80 f0 00 38 22 0c 00 24 80 f0 00 38 22 0c 00 aa aa aa aa aa aa aa aa aa aa aa aa 24 80 f0 00 38 22 0c 00 38 22 0c 00 24 80 f0 00 38 22 0c 00 24 80 f0 00 24 80 f0 00 38 22 0c 00 24 80 f0 00 38 22 0c 00 24 80 f0 00 38 22 0c 00 38 22 0c 00 aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa
-+M 00000002 00000003 38 22 0c 00 38 22 0c 00 24 80 f0 00 38 22 0c 00 24 80 f0 00 24 80 f0 00 38 22 0c 00 24 80 f0 00 38 22 0c 00 24 80 f0 00 38 22 0c 00 38 22 0c 00 aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa 24 80 f0 00 24 80 f0 00 38 22 0c 00 38 22 0c 00 38 22 0c 00 24 80 f0 00 24 80 f0 00 38 22 0c 00 24 80 f0 00 38 22 0c 00 24 80 f0 00 38 22 0c 00 aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa 38 22 0c 00 24 80 f0 00 38 22 0c 00 38 22 0c 00 24 80 f0 00 38 22 0c 00 24 80 f0 00 24 80 f0 00 24 80 f0 00 38 22 0c 00 38 22 0c 00 24 80 f0 00 aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa
-+M 00000003 00000003 38 22 0c 00 24 80 f0 00 38 22 0c 00 38 22 0c 00 24 80 f0 00 38 22 0c 00 24 80 f0 00 24 80 f0 00 24 80 f0 00 38 22 0c 00 38 22 0c 00 24 80 f0 00 aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa 24 80 f0 00 24 80 f0 00 38 22 0c 00 38 22 0c 00 38 22 0c 00 24 80 f0 00 24 80 f0 00 38 22 0c 00 24 80 f0 00 38 22 0c 00 24 80 f0 00 38 22 0c 00 aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa 38 22 0c 00 38 22 0c 00 24 80 f0 00 38 22 0c 00 24 80 f0 00 24 80 f0 00 38 22 0c 00 24 80 f0 00 38 22 0c 00 24 80 f0 00 38 22 0c 00 38 22 0c 00 aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa
-+M 00000004 00000003 38 22 0c 00 24 80 f0 00 38 22 0c 00 24 80 f0 00 38 22 0c 00 38 22 0c 00 aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa 24 80 f0 00 38 22 0c 00 24 80 f0 00 38 22 0c 00 24 80 f0 00 38 22 0c 00 aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa 24 80 f0 00 24 80 f0 00 24 80 f0 00 38 22 0c 00 38 22 0c 00 24 80 f0 00 aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa
-+M 00000005 00000003 24 80 f0 00 24 80 f0 00 38 22 0c 00 38 22 0c 00 24 80 f0 00 aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa 38 22 0c 00 24 80 f0 00 38 22 0c 00 24 80 f0 00 38 22 0c 00 aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa 24 80 f0 00 38 22 0c 00 24 80 f0 00 38 22 0c 00 38 22 0c 00 aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa
-+M 00000006 00000003 38 22 0c 00 24 80 f0 00 38 22 0c 00 38 22 0c 00 aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa 24 80 f0 00 38 22 0c 00 24 80 f0 00 38 22 0c 00 aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa
-+M 00000007 00000003 24 80 f0 00 38 22 0c 00 38 22 0c 00 24 80 f0 00 aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa 24 80 f0 00 38 22 0c 00 24 80 f0 00 38 22 0c 00 aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa
-+M 00000008 00000003 38 22 0c 00 38 22 0c 00 38 22 0c 00 24 80 f0 00 24 80 f0 00 38 22 0c 00 24 80 f0 00 38 22 0c 00 24 80 f0 00 38 22 0c 00 aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa 38 22 0c 00 38 22 0c 00 24 80 f0 00 38 22 0c 00 24 80 f0 00 24 80 f0 00 24 80 f0 00 38 22 0c 00 38 22 0c 00 24 80 f0 00 aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa
-+M 00000009 00000003 aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa 24 80 f0 00 24 80 f0 00 aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa 24 80 f0 00 38 22 0c 00
-+M 0000000a 00000002 38 22 0c 00 24 80 f0 00 24 80 f0 00 38 22 0c 00 38 22 0c 00 38 22 0c 00 24 80 f0 00 24 80 f0 00 38 22 0c 00 24 80 f0 00 38 22 0c 00 24 80 f0 00 38 22 0c 00 aa aa aa aa aa aa aa aa aa aa aa aa 24 80 f0 00 38 22 0c 00 24 80 f0 00 38 22 0c 00 38 22 0c 00 24 80 f0 00 38 22 0c 00 24 80 f0 00 24 80 f0 00 24 80 f0 00 38 22 0c 00 38 22 0c 00 24 80 f0 00 aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa
-+M 0000000b 00000002 24 80 f0 00 38 22 0c 00 24 80 f0 00 38 22 0c 00 38 22 0c 00 24 80 f0 00 38 22 0c 00 24 80 f0 00 24 80 f0 00 24 80 f0 00 38 22 0c 00 38 22 0c 00 24 80 f0 00 aa aa aa aa aa aa aa aa aa aa aa aa 38 22 0c 00 24 80 f0 00 24 80 f0 00 38 22 0c 00 38 22 0c 00 38 22 0c 00 24 80 f0 00 24 80 f0 00 38 22 0c 00 24 80 f0 00 38 22 0c 00 24 80 f0 00 38 22 0c 00 aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa
-+M 0000000c 00000002 24 80 f0 00 24 80 f0 00 38 22 0c 00 38 22 0c 00 38 22 0c 00 24 80 f0 00 24 80 f0 00 38 22 0c 00 24 80 f0 00 38 22 0c 00 24 80 f0 00 38 22 0c 00 aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa 38 22 0c 00 24 80 f0 00 38 22 0c 00 38 22 0c 00 24 80 f0 00 38 22 0c 00 24 80 f0 00 24 80 f0 00 24 80 f0 00 38 22 0c 00 38 22 0c 00 24 80 f0 00 aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa
-+M 0000000d 00000002 38 22 0c 00 24 80 f0 00 38 22 0c 00 38 22 0c 00 24 80 f0 00 38 22 0c 00 24 80 f0 00 24 80 f0 00 24 80 f0 00 38 22 0c 00 38 22 0c 00 24 80 f0 00 aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa 24 80 f0 00 24 80 f0 00 38 22 0c 00 38 22 0c 00 38 22 0c 00 24 80 f0 00 24 80 f0 00 38 22 0c 00 24 80 f0 00 38 22 0c 00 24 80 f0 00 38 22 0c 00 aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa
-+M 0000000e 00000003 aa aa aa aa 24 80 f0 00 38 22 0c 00 38 22 0c 00 24 80 f0 00 38 22 0c 00 24 80 f0 00 24 80 f0 00 38 22 0c 00 24 80 f0 00 38 22 0c 00 24 80 f0 00 38 22 0c 00 38 22 0c 00 aa aa aa aa aa aa aa aa aa aa aa aa 38 22 0c 00 24 80 f0 00 24 80 f0 00 38 22 0c 00 38 22 0c 00 38 22 0c 00 24 80 f0 00 24 80 f0 00 38 22 0c 00 24 80 f0 00 38 22 0c 00 24 80 f0 00 38 22 0c 00 aa aa aa aa aa aa aa aa aa aa aa aa 24 80 f0 00 38 22 0c 00 24 80 f0 00 38 22 0c 00 38 22 0c 00 24 80 f0 00 38 22 0c 00 24 80 f0 00 24 80 f0 00 24 80 f0 00 38 22 0c 00 38 22 0c 00 24 80 f0 00 aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa
-+M 0000000f 00000000 aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa
-+M 00000010 00000000 aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa
-+M 00000011 00000005 24 80 f0 00 38 22 0c 00 38 22 0c 00 24 80 f0 00 38 22 0c 00 24 80 f0 00 24 80 f0 00 38 22 0c 00 24 80 f0 00 38 22 0c 00 24 80 f0 00 38 22 0c 00 38 22 0c 00 aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa
++++ b/win32/winapi/src/user32/keyboard.rs
+@@ -0,0 +1,122 @@
++//! Original game's scan-code-zero ToAscii path for the fixed reference
++//! Chinese keyboard layout. This does not implement IME or all layouts.
++use crate::{Ptr, kernel32::SetLastError};
++use runtime::Context;
++const TABLE: &[u8; 16384] = include_bytes!("keyboard_data.bin");
++const KEYMAP: &[u8; 15360] = include_bytes!("keymap_data.bin");
++const REFERENCE_LAYOUT: u32 = 0xe0010804;
++
++#[win32_derive::dllexport]
++pub fn GetKeyboardLayout(ctx: &mut Context, idThread: u32) -> u32 {
++    if idThread == 0 || idThread == ctx.thread_id {
++        return REFERENCE_LAYOUT;
++    }
++    // All currently created virtual threads inherit this one layout. Layout
++    // activation and IME language changes are not implemented by this port.
++    if idThread < crate::kernel32::lock().next_thread_id {
++        REFERENCE_LAYOUT
++    } else {
++        0
++    }
++}
++
++#[win32_derive::dllexport]
++pub fn MapVirtualKeyA(_ctx: &mut Context, uCode: u32, uMapType: u32) -> u32 {
++    if uMapType > 4 {
++        return 0;
++    }
++    let group = match uCode & !0xff {
++        0 => 0,
++        0xe000 => 1,
++        0xe100 => 2,
++        _ => unimplemented!("MapVirtualKeyA code prefix {uCode:x}"),
++    };
++    let offset = ((group * 5 + uMapType) * 256 + (uCode & 255)) as usize * 4;
++    u32::from_le_bytes(KEYMAP[offset..][..4].try_into().unwrap())
++}
++
++#[win32_derive::dllexport]
++pub fn ToAscii(
++    ctx: &mut Context,
++    uVirtKey: u32,
++    uScanCode: u32,
++    lpKeyState: Ptr<u8>,
++    lpChar: Ptr<u8>,
++    uFlags: u32,
++) -> i32 {
++    if uScanCode != 0 || uFlags != 0 {
++        unimplemented!("ToAscii scan={uScanCode:x} flags={uFlags:x}");
++    }
++    if lpChar.addr == 0 {
++        SetLastError(ctx, 87);
++        return 0;
++    }
++    if uVirtKey > 255 {
++        return 0;
++    }
++    let keys = if lpKeyState.addr == 0 {
++        let state = crate::user32::state().input.borrow();
++        std::array::from_fn(|index| state.key_state(index as u8))
++    } else {
++        <[u8; 256]>::try_from(&ctx.memory[lpKeyState.addr..][..256]).unwrap()
++    };
++    let modifiers = (u32::from(keys[0x10] & 0x80 != 0))
++        | (u32::from(keys[0x11] & 0x80 != 0) << 1)
++        | (u32::from(keys[0x12] & 0x80 != 0) << 2)
++        | (u32::from(keys[0x14] & 1 != 0) << 3);
++    let offset = (modifiers * 256 + uVirtKey) as usize * 4;
++    let cell = &TABLE[offset..][..4];
++    // Return value counts translated characters, not encoded ANSI bytes.
++    // Preserve every byte the actual reference call left untouched.
++    ctx.memory[lpChar.addr..][..cell[2] as usize].copy_from_slice(&cell[..cell[2] as usize]);
++    cell[3] as i32
++}
++
++#[cfg(test)]
++mod tests {
++    use super::*;
++    #[test]
++    fn control_return_dbcs_and_no_character_preserve_reference_buffer_bytes() {
++        let mut ctx = Context {
++            cpu: Default::default(),
++            thread_handle: 1,
++            thread_id: 1,
++            memory: runtime::Memory::leak_new(16384),
++            blocks: &[],
++            cache: Default::default(),
++            recent: [Context::return_from_x86; 4],
++        };
++        assert_eq!(GetKeyboardLayout(&mut ctx, 0), 0xe0010804);
++        assert_eq!(GetKeyboardLayout(&mut ctx, 1), 0xe0010804);
++        for (key, control, shift, result, word) in [
++            (13, false, false, 1, 0xa50d),
++            (13, true, false, 1, 0xa50a),
++            (13, true, true, 0, 0xa55a),
++            (0xe6, false, false, 1, 0xc0a1),
++            (0x10, false, false, 0, 0xa55a),
++        ] {
++            ctx.memory[0x1000..][..256].fill(0);
++            if control {
++                ctx.memory.write::<u8>(0x1011, 0x80);
++            }
++            if shift {
++                ctx.memory.write::<u8>(0x1010, 0x80);
++            }
++            ctx.memory.write::<u32>(0x2000, 0xdead_a55a);
++            assert_eq!(
++                ToAscii(&mut ctx, key, 0, Ptr::new(0x1000), Ptr::new(0x2000), 0),
++                result
++            );
++            assert_eq!(ctx.memory.read::<u32>(0x2000), 0xdead_0000 | word);
++        }
++        for (mode, code, expected) in [
++            (0, 13, 0x1c),
++            (1, 0x1c, 13),
++            (2, 65, 65),
++            (3, 0xe01d, 0xa2),
++            (4, 0xa3, 0xe01d),
++        ] {
++            assert_eq!(MapVirtualKeyA(&mut ctx, code, mode), expected);
++        }
++    }
++}
+diff --git a/win32/winapi/src/user32/keyboard_data.bin b/win32/winapi/src/user32/keyboard_data.bin
+new file mode 100644
+index 0000000000000000000000000000000000000000..32dca1dd919c8ef889b7e675de5a4d778713ef5d
+GIT binary patch
+literal 16384
+zcmeI2hf>u*6ozxbu84}*6}wolVaJBp8-iW1VDG(v?Ol8mAC2$Kn3;85Lw0W>8|U1a
+zZ&J4ZXHPaKdy^#lHzldnrh=KP$+|Yvvd$Mf$}M-?%c{dp+e-OuupK&K2keAhup9Qk
+zUa-rV*F&V=g?n%x9>7C*1drhfJcVcQ9A3ancm=QF4ZMYS@E$(ENB9K8Fan>!Y}5CA
+z1LZfuX6X2J+``efp0e^Eh^Q~FF?P{E>Ek9a^}F*A`#nHggK!hpS?%uUdYW<X$Ipf+
+zY#Y1(uSc^La2Qs>YFGoeU@eH>w1aC-r1!c>KLR~)6pq1hH~}Z&6r6@La2C$NdFX`;
+z&<Fi+5iY@HxB^$<8eE4PkhT|cO#NTV%KVk1`oE}<@3#-l<oPLnb{h`DA@~mYYN$Wg
+z7uxy?-(aQHuJk8X|F=hO_R~(wx-Mh=&uTAkS`F<Rpb;j(M3@AVA$|VIn5V-GXo8v0
+z46|T1%z+k|3#~8@=EDM52#X+Ze_Z)e|JU{3rA{^O$^2geOaC$#Lj9`D(aZcVs(zRM
+zCxzAjdq0<X)LSM07hCB1U*C*uGv<cRJgKkMB&n+ZYy7YA|5$ThV(YQ;jAwcm{gXaw
+z{O@Ol^!?W?CGWrHb>4H=`d{z&KaKzMs$Xut*!^GQ|8niGwW|WEfGVI0r~<0M|D!<c
+z@Bc;Y|5s`MPrv_%`Ig52VY<cc|3$?ALwwJu%Kv}Fiu(QEe=ckM@2{DZaP9wv?o+zH
+z{}s3Y7dAdARi*tuUH`-FJl-W`{_Fm~ZH2JC1iKddIpVXgTP6ROaqIg3r}cgA=>C6x
+zwPJt&*Z4obEz8Uq`~IKC|6$gT-TyWI53_60rDFGgjsJ_bxYnl%r~;~hDxeCe0##LD
+E6dfg>s{jB1
+
+literal 0
+HcmV?d00001
+
+diff --git a/win32/winapi/src/user32/keymap_data.bin b/win32/winapi/src/user32/keymap_data.bin
+new file mode 100644
+index 0000000000000000000000000000000000000000..b73e72cd27a9bb4c2a902322013c70b863a65b87
+GIT binary patch
+literal 15360
+zcmeI1X;Y117{^Ns+6Y-%IAlqQN=X~CW{Ju!X4>~=vP)kAp8(@+UqHh5uruR@<prO>
+z?>{|v=NWUPCpq=vx@Lav<vh=MPXGJb&Jhz6ww~~Ga+bzy$>b^~<^=O>-#VXp4(x_Q
+zPzhb&w{C9{%Qy@pz85Q)AB9FZ1xMgG)ImKofZxhlG{I@mGm~Kf#6dhHKq4%JMX(r>
+zU@BY7i$$;<La+?h!v@HORj?5@!Dc9dVpt7pU@0tzb+7_f!VXA>Ldbw^&<vO13IsL%
+z-6y@9jxp-*FM}$mh8oxddto2c!hSda2jM(ifY~;k`C;go;Ty|;c7c4z`H{|bwrvY<
+zm<l@~1xi8sZG~uACJ!orEXacvXoWU72kqdj(@ngwm$47}VZhsS!yuC(w+J|na=ku}
+z{8@f2eVjHr7x|seLvgAY8HX`&v8A|`Z^;i7muKK2oCU?TV!8od!5h#SC@$om@?rU=
+z{6}%Gn3r!W{*`B*!drL=im}&l3FOD}YiTAQS6tM?Gk6X!K-Vkg6w4t{Tn@oixCYnZ
+z2Hb>Oa2xKxFx-RtpqN*@uLo(Y_?Pd<mvj!fpmW>+g`oW5>?4!AFyb~Co8kBPf5+Z?
+z_yC{a0eprGP;QBXFYpz<!FTup+L!&D7^eI;+j~{<Wo8NlQNYEy|DII;BEUQ=!nL6Y
+zdqK8}xVRWfV5;0T)q5%zDUTcg<s(<qTuxFR^XH{{*2+09w>2_v0_8L1Kjl8<CRcNn
+z50$t6#qzni0F+}~u2GLMU#w=ne2_nUjw<%`8C4Vf`n9l*mihC)YKY&eStR*4qBI}n
+zIf~2a#E@cb9LB)q1^Ir^`u~`F6mvo9|3j{S4b!dvkGNK6{RBc_^?#zjMhY`iAff_2
+z5q8tqTjJY4!QAze+E!gsU#ag1s+*P21%B)H7O{-#uSa|@Rxnq6RUT12Rn1lZUk9qQ
+z4dAzO7OvLnnaQvK)DOo)0wlsha5?I4dDXuEBi0Pf^-3KxykGvK@0s$Uoc9xcw3~6Z
+zP4zYv)FY-qDU`uhh?ZsYAoXynw|US4t<VPQ7u&&Er<-_VFJm9{!+^KvhCwDnZegP-
+zU<#N5(^OzC`u}u3TP+0X|Ce%okp5rStN&jHA+Y}6`hVQO%oH#MOaW8CQ(!LYzy1Cf
+zc0c?7zpxfIGX+cmQ@|831xx``z!doZ3d}|SZ@>SA&(-?>uogBm1xx``z!Zp{0&`LS
+Z?f1X%`C9!CYhg1}z!WeAOo8Yr@C(L9MDPFr
+
+literal 0
+HcmV?d00001
+
+diff --git a/win32/winapi/src/voice_catalog.rs b/win32/winapi/src/voice_catalog.rs
+new file mode 100644
+index 0000000..138a1cd
+--- /dev/null
++++ b/win32/winapi/src/voice_catalog.rs
+@@ -0,0 +1,94 @@
++// Generated by games/joey/reverse/prepare_subtitles.py from pinned original Voice.dat.
++// Normalize to the existing light PCM profile so both resource qualities identify alike.
++const VOICES: &[(usize, u64, u16)] = &[
++    (181946, 0xc91baa2d56266d95, 1),
++    (186836, 0x97b315cc4d3137ca, 2),
++    (400170, 0x395896068b38dc15, 3),
++    (158538, 0xeb82a83285b26256, 4),
++    (119306, 0x4c7318339f15f4ec, 5),
++    (126534, 0x40f51d041d4eeaa2, 6),
++    (116266, 0x260699f30e9362c7, 7),
++    (93256, 0x6de4ab81d287821b, 8),
++    (103164, 0xac38385c6b5efc18, 9),
++    (96934, 0xd0a7c7f6bd706509, 10),
++    (91568, 0x17df07519f87b9a5, 11),
++    (123700, 0x7dd246d73aaaa863, 12),
++    (123402, 0xe50f4aab9da8250b, 13),
++    (327846, 0x18be6dae92aa9721, 14),
++    (160492, 0x96e3de66c6754ae4, 15),
++    (93218, 0xe198929e6563083f, 16),
++    (344558, 0xc9a194f7cbb53a14, 17),
++    (56676, 0x381410cf68a3590f, 18),
++    (81648, 0xb9988efc2fe4b36b, 19),
++    (163102, 0xe44b56a7d76cf999, 20),
++    (302650, 0x72710c75a6b59ebf, 21),
++    (87366, 0x807f07cc77fc8833, 22),
++    (47366, 0x5c3eb0b887aada2e, 23),
++    (63244, 0xcf86f8968b4f2f99, 24),
++    (66614, 0xfa1e154e1fe19dd2, 25),
++    (42590, 0x728978012cc50edf, 26),
++    (95660, 0xa2c911260b3f20fc, 27),
++    (33556, 0xae72fe59409c778e, 28),
++    (296586, 0x76c6b6fb8aff11c7, 29),
++    (77038, 0xccbe1811f261bb30, 30),
++    (126040, 0x9ec2c7ba178b7272, 31),
++    (175198, 0x93a7f3523cecd660, 32),
++    (20082, 0x9b8020fd21d32834, 33),
++    (56438, 0x7c0fd492431605c0, 34),
++    (237998, 0x8ae3cc8dc5c8162c, 35),
++    (149064, 0xd3b107baa9d73a48, 36),
++    (182916, 0xc4f7dbcefc5e72e8, 37),
++    (54684, 0x004234c34b3a5369, 38),
++    (86170, 0x036acee97210b5f4, 39),
++    (108030, 0xc43fd622934053d0, 40),
++    (41088, 0x8a2b3fa6e017c761, 41),
++    (17064, 0x8eef376cc04d216d, 42),
++    (119890, 0x7e2bce124b427159, 43),
++    (117966, 0x6146a326f761500b, 44),
++    (91094, 0xa3664ea0de58d1b0, 45),
++    (66340, 0x2a7fcfd7ed9aaa4c, 46),
++    (78946, 0x35e9ed6d9a19ea9e, 47),
++    (62404, 0x049063c95438968f, 48),
++    (51476, 0x1f2fb9bd2e0879f2, 49),
++    (68378, 0x6b77eae6384c9a89, 50),
++    (30854, 0xdfde50fa37e15cd3, 51),
++    (60220, 0x7cf2c684a9133577, 52),
++    (348398, 0xf044222ebdc56eea, 53),
++    (257838, 0xfef8f853a6b204eb, 54),
++    (160922, 0x18d93cbee137161f, 55),
++    (231892, 0x1488746a764e4bcb, 56),
++    (185224, 0x9f20a016c34cddc0, 57),
++    (55386, 0x661ff2df9847db95, 58),
++    (302136, 0x90f2e33b2122f60f, 59),
++    (39958, 0x664b5482bc0b6bff, 60),
++    (147472, 0xe7fb5da6635e785d, 61),
++    (87556, 0x97f1f08a458eb60c, 62),
++    (118836, 0x5666aabd67b2fc8a, 63),
++    (105446, 0x91020589c90f0ae5, 64),
++    (201640, 0x8c419b4f9b042989, 65),
++    (190960, 0x2f44566e49b6e67f, 66),
++    (86882, 0xe940dbb4767bac7f, 67),
++    (155866, 0x6986b42e35cb6bc9, 68),
++    (245298, 0xc5a5b1ad4d599907, 69),
++    (157394, 0x8d6fe3de44ae8bf7, 70),
++    (222172, 0x01a325e1af41b82f, 71),
++    (128460, 0xcd0e1a3aa3071b2f, 72),
++    (256736, 0x1edfe65c81930f67, 74),
++];
++
++pub fn candidate(channels: u32, bits: u32, size: u32) -> bool {
++    channels == 1 && bits == 16 && VOICES.iter().any(|entry| entry.0 == size as usize)
++}
++
++pub fn identify(pcm: &[u8]) -> Option<u16> {
++    let &(_, expected, voice) = VOICES.iter().find(|entry| entry.0 == pcm.len())?;
++    let mut hash = 14695981039346656037u64;
++    for bytes in pcm.chunks_exact(2) {
++        let sample = i16::from_le_bytes([bytes[0], bytes[1]]) as i32;
++        let normalized = (((sample + 4).div_euclid(8) * 8).clamp(-32768, 32767) as i16).to_le_bytes();
++        for byte in normalized {
++            hash = (hash ^ byte as u64).wrapping_mul(1099511628211);
++        }
++    }
++    (hash == expected).then_some(voice)
++}

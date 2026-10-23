@@ -1,0 +1,315 @@
+{
+  "schema": 2,
+  "rulesVersion": "joey-five-collectible-cards-v2",
+  "specSHA256": "a7477d95cbee8b3621c4dd8ba3abe43fccfcca04b0b9d6ade984ee530a12712a",
+  "archiveSHA256": "a76107c5e848ad20edf08ff868f065379ef33c365f03049572943dce8aa0192f",
+  "renderer": "Original bitmap templates with browser Canvas text",
+  "browser": "146.0.7680.164",
+  "fonts": [
+    {
+      "family": "Times New Roman",
+      "sha256": "4e98adeff8ccc8ef4e3ece8d4547e288ff85fdc9c7ca711a4599c234874bbe86"
+    },
+    {
+      "family": "Arial",
+      "sha256": "35c0f3559d8db569e36c31095b8a60d441643d95f59139de40e23fada819b833"
+    }
+  ],
+  "measurements": {
+    "art": [
+      28,
+      63,
+      144,
+      144
+    ],
+    "title": [
+      19,
+      18,
+      140,
+      18
+    ],
+    "type": [
+      19,
+      223,
+      161,
+      7
+    ],
+    "body": [
+      19,
+      230,
+      161,
+      33
+    ],
+    "stats": [
+      99,
+      265,
+      82,
+      8
+    ],
+    "setCode": [
+      145,
+      211,
+      35,
+      7
+    ],
+    "copyright": [
+      105,
+      278,
+      76,
+      5
+    ],
+    "attribute": [
+      160,
+      16,
+      22,
+      22
+    ],
+    "stars": [
+      120,
+      42,
+      56,
+      14
+    ]
+  },
+  "preview": "5x pixel-faithful preview of final game bitmap",
+  "cards": [
+    {
+      "internal": 1115,
+      "legacy": 1950,
+      "name": "凉茶",
+      "nameEn": "Herbal Tea",
+      "artSHA256": "0587e4e869375074211b9ae09afc45f4110c47b5fee69ad0679c732f837afcdc",
+      "template": "sdy023.bmp",
+      "templateSHA256": "fb2db2ad4168e255e63b0a242b73fa8510f39d8a3a4f03344e9f37808d481cdb",
+      "typeSource": null,
+      "layout": {
+        "lines": [
+          "Brew the fury of this Duel into a cup of tea. Your opponent",
+          "drinks it and loses the will to fight. You win the Duel. Offline",
+          "only."
+        ],
+        "bodySize": 6.05,
+        "lineHeight": 6.65,
+        "bottom": 242.10000000000002,
+        "titleRight": 101.76780700683594
+      },
+      "assets": {
+        ".png": {
+          "file": "herbal-tea.png",
+          "bytes": 244504,
+          "sha256": "64834199b54c27d4d7eb1eecfb3cc3e81e7476aee52d2e0fcc87d2f68f65419a"
+        },
+        ".native.png": {
+          "file": "herbal-tea.native.png",
+          "bytes": 132748,
+          "sha256": "28ed8b53bacce594f34f227178115ffc6b92fe7af1546b0d0b5e8ee8361d8e99"
+        },
+        ".mini.png": {
+          "file": "herbal-tea.mini.png",
+          "bytes": 10778,
+          "sha256": "35b35ab23d12420a30cb9d26a80ee360bab253bcbb61bdaf31f268d977ecab9d"
+        },
+        ".bmp": {
+          "file": "herbal-tea.bmp",
+          "bytes": 174056,
+          "sha256": "8466ad19f0e13fa70439bdbabd5c693ec261218b7f9d8fe27de56f984585c877"
+        },
+        ".mini.bmp": {
+          "file": "herbal-tea.mini.bmp",
+          "bytes": 11000,
+          "sha256": "b100d03cdbd7e9e0a5247e11cd18ef3c732dc57d8d12bfc1a79b8f37f8b47644"
+        }
+      }
+    },
+    {
+      "internal": 1116,
+      "legacy": 1951,
+      "name": "年糕",
+      "nameEn": "Rice Cake",
+      "artSHA256": "09489fdded17178a5b9144336a4a3739ec860386b72f2fb42afe74d2c091169f",
+      "template": "mrl079.bmp",
+      "templateSHA256": "5757a19bffb3800c94e224a74985a73fdb9370cd325bf6dbd8fdd8a867aa909c",
+      "typeSource": "mrl020.bmp",
+      "layout": {
+        "lines": [
+          "When Summoned face-up: Stick all remaining turns",
+          "together. Your opponent never gets another turn. You win",
+          "the Duel. Offline only."
+        ],
+        "bodySize": 6.05,
+        "lineHeight": 6.65,
+        "bottom": 248.8,
+        "titleRight": 90.16552734375
+      },
+      "assets": {
+        ".png": {
+          "file": "rice-cake.png",
+          "bytes": 248840,
+          "sha256": "e6ea03174fed8dd2b7554e5e4a3f8ec5b5d0b95e3f81427ae92f8c2cca2d2f5d"
+        },
+        ".native.png": {
+          "file": "rice-cake.native.png",
+          "bytes": 134440,
+          "sha256": "82646ca76b85d8e4dfcbf66c8433096a42c0f5c3b5db17ddc3797b5efa41bf40"
+        },
+        ".mini.png": {
+          "file": "rice-cake.mini.png",
+          "bytes": 10841,
+          "sha256": "67d7c25a3c723c305291e8fc21a1cc9674d7b78e9d3d112ef6fcab58a74d2315"
+        },
+        ".bmp": {
+          "file": "rice-cake.bmp",
+          "bytes": 174056,
+          "sha256": "1f3ce9f626239739cc64eadccf0e8110fbea15bc91864f6abecad4a17a591da2"
+        },
+        ".mini.bmp": {
+          "file": "rice-cake.mini.bmp",
+          "bytes": 11000,
+          "sha256": "deb18a06c30596dd0fc041ae6b586f479ea76dd2ff4114a1f14f740c770c1638"
+        }
+      }
+    },
+    {
+      "internal": 1117,
+      "legacy": 1952,
+      "name": "大葱",
+      "nameEn": "Scallion",
+      "artSHA256": "879e154686ea647e2b2a5e6f7454bf9964b8cd09695fff6073e101193a97cc36",
+      "template": "lon070.bmp",
+      "templateSHA256": "955c1946427fe00e9b4f057a2d9e28e82d2d8ed38fc35409dd6d9f05fd5f4012",
+      "typeSource": "mrl094.bmp",
+      "layout": {
+        "lines": [
+          "When Summoned face-up: Cut every path to your defeat.",
+          "Only one ending remains: you win the Duel. Offline only."
+        ],
+        "bodySize": 6.05,
+        "lineHeight": 6.65,
+        "bottom": 242.15,
+        "titleRight": 83.13749694824219
+      },
+      "assets": {
+        ".png": {
+          "file": "scallion.png",
+          "bytes": 251119,
+          "sha256": "347c8d3de5a0994419fde7a1573223d6461c8c9880ca833dc2057257a990f070"
+        },
+        ".native.png": {
+          "file": "scallion.native.png",
+          "bytes": 136632,
+          "sha256": "e767d91065426c6e50c8df5c7c7a09fa599ceaf56750b23f89ad9c68420d4efa"
+        },
+        ".mini.png": {
+          "file": "scallion.mini.png",
+          "bytes": 10899,
+          "sha256": "e6af1e1ef761cdaecad83e89cb29c75c23c602b76db70eaf80697759548cc7dc"
+        },
+        ".bmp": {
+          "file": "scallion.bmp",
+          "bytes": 174056,
+          "sha256": "bb3671ec9d7f09c1de3190bfedcbd334ea8028d304d8ada8df5456e20ab2e69c"
+        },
+        ".mini.bmp": {
+          "file": "scallion.mini.bmp",
+          "bytes": 11000,
+          "sha256": "ebf0cd09593361258e1badb9729a9991d31f0e5682606a9bd0033fbdd02a8599"
+        }
+      }
+    },
+    {
+      "internal": 1118,
+      "legacy": 1953,
+      "name": "猴子",
+      "nameEn": "Monkey",
+      "artSHA256": "89d36e41ff2fb97807333673ba664ea0a6257e606b7ec67f49601fd30aea5549",
+      "template": "sdk004.bmp",
+      "templateSHA256": "109633cdba6d46905c7e5bce1a3de0d045402a8c057b795c5c4ad5526d8bc332",
+      "typeSource": "mrl079.bmp",
+      "layout": {
+        "lines": [
+          "When Summoned face-up: While your opponent looks",
+          "away, steal victory itself. You win the Duel. Offline only."
+        ],
+        "bodySize": 6.05,
+        "lineHeight": 6.65,
+        "bottom": 242.15,
+        "titleRight": 77.70423889160156
+      },
+      "assets": {
+        ".png": {
+          "file": "monkey.png",
+          "bytes": 247770,
+          "sha256": "b996472652ee7e131057c4988025e8e83da618ae9323d1c06ada5589866b0df1"
+        },
+        ".native.png": {
+          "file": "monkey.native.png",
+          "bytes": 132455,
+          "sha256": "4858c87a1e689c3d2597382d674c5c46ddd12e1e2808155e0b270c907e991706"
+        },
+        ".mini.png": {
+          "file": "monkey.mini.png",
+          "bytes": 10780,
+          "sha256": "d0bea0e3d28012ba0dabba12837acb02912178ef74c57b6e9e7dc566854566b9"
+        },
+        ".bmp": {
+          "file": "monkey.bmp",
+          "bytes": 174056,
+          "sha256": "9c8b60cbae257ec2caa7f7ff9aaa1486da5dbe5eb085ff93776eea3611cda8a4"
+        },
+        ".mini.bmp": {
+          "file": "monkey.mini.bmp",
+          "bytes": 11000,
+          "sha256": "b4a54d84c74739e652234e62f4eb385cc6b7ee78a5b66bc66da23cd024dd6e02"
+        }
+      }
+    },
+    {
+      "internal": 1119,
+      "legacy": 1954,
+      "name": "仙人掌",
+      "nameEn": "Cactus",
+      "artSHA256": "be87d939d39aca8c069b31395b0cfc20b6a8202f39edfbf8b2459f27bd59937c",
+      "template": "mrl079.bmp",
+      "templateSHA256": "5757a19bffb3800c94e224a74985a73fdb9370cd325bf6dbd8fdd8a867aa909c",
+      "typeSource": "mrl094.bmp",
+      "layout": {
+        "lines": [
+          "When Summoned face-up: Return all hostility in a storm of",
+          "needles. Your opponent surrenders. You win the Duel.",
+          "Offline only."
+        ],
+        "bodySize": 6.05,
+        "lineHeight": 6.65,
+        "bottom": 248.8,
+        "titleRight": 71.31849670410156
+      },
+      "assets": {
+        ".png": {
+          "file": "cactus.png",
+          "bytes": 248437,
+          "sha256": "cce6acd404511a421de96ab23fdb93deb744a791eee6dea07630d0e8c0958150"
+        },
+        ".native.png": {
+          "file": "cactus.native.png",
+          "bytes": 134338,
+          "sha256": "f584a4103a7234a5e38d13ec577e3dc48b5356f4a02f2b903042fcd6bb433d52"
+        },
+        ".mini.png": {
+          "file": "cactus.mini.png",
+          "bytes": 10773,
+          "sha256": "8fd355d43b85da42665c1b6afaa39f52e95fe94e21ff0d06a8ec8e8549e83453"
+        },
+        ".bmp": {
+          "file": "cactus.bmp",
+          "bytes": 174056,
+          "sha256": "e8bab481b21ba9df796bc050f419fc86632b36883da476b6fb7ee87b976b8531"
+        },
+        ".mini.bmp": {
+          "file": "cactus.mini.bmp",
+          "bytes": 11000,
+          "sha256": "5cde735977f943402af2bd6e25cef8121c1344d02f91921279fb864405860030"
+        }
+      }
+    }
+  ]
+}

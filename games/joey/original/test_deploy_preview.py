@@ -82,9 +82,9 @@ class PreviewDeploymentTest(unittest.TestCase):
     def test_valid_archive_preserves_fixed_members_and_modes(self):
         release = self.root / 'release'
         self.assertEqual(deploy.unpack_preview(self.archive, self.write_archive(), release), self.revision)
-        self.assertEqual({path.name for path in release.iterdir()}, deploy.PREVIEW_MEMBERS)
+        self.assertEqual({path.relative_to(release).as_posix() for path in release.rglob('*') if path.is_file()}, deploy.PREVIEW_MEMBERS)
         self.assertEqual(release.stat().st_mode & 0o777, 0o755)
-        self.assertTrue(all(path.stat().st_mode & 0o777 == 0o644 for path in release.iterdir()))
+        self.assertTrue(all(path.stat().st_mode & 0o777 == (0o755 if path.is_dir() else 0o644) for path in release.rglob('*')))
 
     def test_bad_checksum_rejected_without_extracting(self):
         self.write_archive()
